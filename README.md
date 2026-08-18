@@ -30,15 +30,19 @@ node demo/build.mjs [percorso/anagrafica.csv]
 
 - **Nuova etichetta** — vettore, sede di partenza, destinatario dalla rubrica (con ricerca),
   numero colli, anteprima del foglio A4 e stampa.
-- **Storico** — tutte le spedizioni registrate; `Ristampa` riapre i dati nel modulo mantenendo il
-  codice originale, senza consumare un nuovo numero.
+- **Borderò** — la distinta per l'autista: scegli vettore e giornata, spunta le spedizioni create e
+  stampa. Ogni borderò riceve un numero `BO-<anno>-<progressivo>`; una spedizione già inserita in un
+  borderò non può finire in un secondo (resta in elenco, barrata, con il numero a cui appartiene).
+  Il documento si impagina da solo su più fogli A4 e l'ultima pagina porta totali e firme.
+- **Storico** — tutte le spedizioni registrate, con il borderò di appartenenza; `Ristampa` riapre i
+  dati nel modulo mantenendo il codice originale, senza consumare un nuovo numero.
 - **Rubrica** — importazione dei destinatari da CSV (incolla il testo oppure apri un file).
 
 ## Numerazione
 
-Il codice `SI-<anno>-<progressivo>` è assegnato dal server dentro una transazione al momento della
-registrazione della spedizione, quindi non ci sono numeri duplicati o saltati. Il contatore riparte
-da 1 a ogni anno solare.
+`SI-<anno>-<progressivo>` per le spedizioni, `BO-<anno>-<progressivo>` per i borderò: entrambi
+assegnati dal server dentro una transazione, quindi senza numeri duplicati o saltati. I contatori
+ripartono da 1 a ogni anno solare.
 
 ## Formato CSV dell'anagrafica
 
@@ -81,6 +85,9 @@ altrimenti il server.
 | ------ | ----------------- | ------------------------------------------------------------ |
 | GET    | `/api/stato`      | anagrafica, sedi, vettori, storico, prossimo codice           |
 | GET    | `/api/clienti?q=` | ricerca clienti (primi 50 per nome, città, indirizzo, codice) |
+| GET    | `/api/spedizioni` | `?giorno=YYYY-MM-DD&vettore=` — spedizioni di una giornata      |
+| GET    | `/api/bordero`    | elenco borderò, oppure `?numero=BO-…` per il dettaglio         |
+| POST   | `/api/bordero`    | `{ codici, vettore, giorno }` — crea il borderò e lo numera     |
 | POST   | `/api/clienti`    | `{ csv }` — sostituisce l'anagrafica                           |
 | POST   | `/api/sedi`       | `{ sedi }` — elenco delle sedi di partenza                     |
 | POST   | `/api/mittente`   | `{ mittente }` — memorizza la sede di partenza predefinita     |

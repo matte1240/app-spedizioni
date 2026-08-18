@@ -19,7 +19,9 @@
     vettori: ["Trasporti Bianchi", "Corriere Alpi", "Logistica Padana", "Ritiro in sede"],
     mittente: "Magazzino Udine",
     spedizioni: [],
+    bordero: [],
     contatore: {},
+    contatoreBordero: {},
   });
 
   let db;
@@ -27,6 +29,8 @@
     const salvato = localStorage.getItem(CHIAVE);
     db = salvato ? JSON.parse(salvato) : iniziale();
     if (!db.clienti || !db.clienti.length) db.clienti = anagraficaIniziale;
+    db.bordero = db.bordero || [];
+    db.contatoreBordero = db.contatoreBordero || {};
   } catch {
     db = iniziale();
   }
@@ -66,6 +70,33 @@
     return codiceDa(anno, (db.contatore[anno] || 0) + 1);
   }
 
+  const giornoLocale = (iso) => {
+    const d = new Date(iso);
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  };
+
+  function elencoBordero() {
+    return db.bordero.map((b) => {
+      const righe = db.spedizioni.filter((s) => s.bordero === b.numero);
+      return {
+        numero: b.numero,
+        giorno: b.giorno,
+        vettore: b.vettore,
+        creatoAt: b.creatoAt,
+        spedizioni: righe.length,
+        colli: righe.reduce((n, r) => n + r.colli, 0),
+      };
+    });
+  }
+
+  function borderoDettaglio(numero) {
+    const b = db.bordero.find((x) => x.numero === numero);
+    if (!b) return null;
+    const righe = db.spedizioni.filter((s) => s.bordero === numero).slice().reverse();
+    return { ...b, righe, colli: righe.reduce((n, r) => n + r.colli, 0) };
+  }
+
   function stato(q) {
     return {
       clienti: cerca(q),
@@ -75,7 +106,9 @@
       mittente: db.sedi.includes(db.mittente) ? db.mittente : db.sedi[0] || "",
       vettori: db.vettori,
       storico: db.spedizioni.slice(0, 200),
+      bordero: elencoBordero(),
       prossimoCodice: prossimoCodice(),
+      oggi: giornoLocale(new Date().toISOString()),
     };
   }
 
@@ -176,6 +209,46 @@
       return { mittente: db.mittente };
     }
 
+    if (rotta === "/api/spedizioni" && metodo === "GET") {
+      const giorno = new URLSearchParams(query || "").get("giorno") || giornoLocale(new Date().toISOString());
+      const vettore = new URLSearchParams(query || "").get("vettore") || "";
+      return {
+        giorno,
+        spedizioni: db.spedizioni
+          .filter((s) => giornoLocale(s.data) === giorno && (!vettore || s.vettore === vettore))
+          .slice()
+          .reverse(),
+      };
+    }
+
+    if (rotta === "/api/bordero" && metodo === "GET") {
+      const numero = new URLSearchParams(query || "").get("numero");
+      if (!numero) return { bordero: elencoBordero() };
+      const b = borderoDettaglio(numero);
+      if (!b) throw new Error("borderò inesistente");
+      return b;
+    }
+
+    if (rotta === "/api/bordero" && metodo === "POST") {
+      const codici = (corpo.codici || []).map(String);
+      const righe = db.spedizioni.filter((s) => codici.includes(s.codice) && !s.bordero);
+      if (!righe.length) throw new Error("nessuna spedizione da inserire");
+      const anno = new Date().getFullYear();
+      const seq = (db.contatoreBordero[anno] || 0) + 1;
+      db.contatoreBordero[anno] = seq;
+      const numero = "BO-" + anno + "-" + String(seq).padStart(4, "0");
+      db.bordero.unshift({
+        numero,
+        creatoAt: new Date().toISOString(),
+        giorno: String(corpo.giorno || giornoLocale(new Date().toISOString())),
+        vettore: String(corpo.vettore),
+        mittente: righe[0].mittente || String(corpo.mittente),
+      });
+      righe.forEach((r) => (r.bordero = numero));
+      salva();
+      return { bordero: borderoDettaglio(numero), stato: stato("") };
+    }
+
     if (rotta === "/api/spedizioni") {
       const c = db.clienti.find((x) => x.id === Number(corpo.clienteId));
       if (!c) throw new Error("cliente sconosciuto");
@@ -193,6 +266,7 @@
         indirizzo: c.indirizzo,
         capCitta: c.cap_citta,
         colli: Math.max(1, Math.min(99, Number(corpo.colli) || 1)),
+        bordero: "",
       });
       salva();
       return { codice, stato: stato(corpo.q || "") };

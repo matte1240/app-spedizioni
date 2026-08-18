@@ -40,17 +40,51 @@ db.exec(`
     destinatario TEXT NOT NULL,
     indirizzo TEXT NOT NULL DEFAULT '',
     cap_citta TEXT NOT NULL DEFAULT '',
-    colli INTEGER NOT NULL
+    colli INTEGER NOT NULL,
+    bordero TEXT NOT NULL DEFAULT ''
+  );
+  CREATE TABLE IF NOT EXISTS bordero (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    numero TEXT NOT NULL UNIQUE,
+    creato_at TEXT NOT NULL,
+    giorno TEXT NOT NULL,
+    vettore TEXT NOT NULL,
+    mittente TEXT NOT NULL
   );
   CREATE TABLE IF NOT EXISTS contatore (
-    anno INTEGER PRIMARY KEY,
-    ultimo INTEGER NOT NULL
+    tipo TEXT NOT NULL,
+    anno INTEGER NOT NULL,
+    ultimo INTEGER NOT NULL,
+    PRIMARY KEY (tipo, anno)
   );
   CREATE TABLE IF NOT EXISTS impostazioni (
     chiave TEXT PRIMARY KEY,
     valore TEXT NOT NULL
   );
 `);
+
+migra();
+
+/** Allinea i database creati dalle versioni precedenti. */
+function migra() {
+  const colonne = (tabella) => db.prepare(`PRAGMA table_info(${tabella})`).all().map((c) => c.name);
+
+  if (!colonne("spedizioni").includes("bordero")) {
+    db.exec("ALTER TABLE spedizioni ADD COLUMN bordero TEXT NOT NULL DEFAULT ''");
+  }
+  // contatore: da una riga per anno a una riga per (tipo, anno).
+  if (!colonne("contatore").includes("tipo")) {
+    db.exec(`
+      ALTER TABLE contatore RENAME TO contatore_vecchio;
+      CREATE TABLE contatore (
+        tipo TEXT NOT NULL, anno INTEGER NOT NULL, ultimo INTEGER NOT NULL,
+        PRIMARY KEY (tipo, anno)
+      );
+      INSERT INTO contatore (tipo, anno, ultimo) SELECT 'spedizione', anno, ultimo FROM contatore_vecchio;
+      DROP TABLE contatore_vecchio;
+    `);
+  }
+}
 
 const VETTORI_DEFAULT = ["Trasporti Bianchi", "Corriere Alpi", "Logistica Padana", "Ritiro in sede"];
 const SEDI_DEFAULT = ["Sede principale"];
@@ -174,14 +208,21 @@ const salvaSedi = (sedi) =>
     sedi.forEach((nome, i) => ins.run(nome, i));
   });
 
+/** Avanza il contatore annuale del tipo indicato. Da usare dentro una transazione. */
+function prossimoSeq(tipo) {
+  const anno = new Date().getFullYear();
+  const riga = db.prepare("SELECT ultimo FROM contatore WHERE tipo = ? AND anno = ?").get(tipo, anno);
+  const seq = (riga ? riga.ultimo : 0) + 1;
+  db.prepare(
+    `INSERT INTO contatore (tipo, anno, ultimo) VALUES (?, ?, ?)
+     ON CONFLICT(tipo, anno) DO UPDATE SET ultimo = excluded.ultimo`
+  ).run(tipo, anno, seq);
+  return { anno, seq };
+}
+
 const creaSpedizione = (sp) =>
   inTransazione(() => {
-    const anno = new Date().getFullYear();
-    const riga = db.prepare("SELECT ultimo FROM contatore WHERE anno = ?").get(anno);
-    const seq = (riga ? riga.ultimo : 0) + 1;
-    db.prepare(
-      "INSERT INTO contatore (anno, ultimo) VALUES (?, ?) ON CONFLICT(anno) DO UPDATE SET ultimo = excluded.ultimo"
-    ).run(anno, seq);
+    const { anno, seq } = prossimoSeq("spedizione");
     const codice = codiceDa(anno, seq);
     db.prepare(
       `INSERT INTO spedizioni
@@ -201,14 +242,105 @@ const creaSpedizione = (sp) =>
     return codice;
   });
 
+const creaBordero = (b) =>
+  inTransazione(() => {
+    const posti = b.codici.map(() => "?").join(",");
+    const righe = db
+      .prepare(
+        `SELECT codice, colli, mittente FROM spedizioni
+         WHERE codice IN (${posti}) AND bordero = ''`
+      )
+      .all(...b.codici);
+    if (!righe.length) throw new Error("nessuna spedizione da inserire");
+    // Il mittente del documento è quello con cui le spedizioni sono state create.
+    const mittente = righe[0].mittente || b.mittente;
+
+    const { anno, seq } = prossimoSeq("bordero");
+    const numero = "BO-" + anno + "-" + String(seq).padStart(4, "0");
+    db.prepare(
+      "INSERT INTO bordero (numero, creato_at, giorno, vettore, mittente) VALUES (?, ?, ?, ?, ?)"
+    ).run(numero, new Date().toISOString(), b.giorno, b.vettore, mittente);
+    const marca = db.prepare("UPDATE spedizioni SET bordero = ? WHERE codice = ?");
+    for (const r of righe) marca.run(numero, r.codice);
+    return numero;
+  });
+
 /* — letture — */
 
 const codiceDa = (anno, seq) => "SI-" + anno + "-" + String(seq).padStart(4, "0");
 
-function prossimoCodice() {
+function ultimoSeq(tipo) {
   const anno = new Date().getFullYear();
-  const riga = db.prepare("SELECT ultimo FROM contatore WHERE anno = ?").get(anno);
-  return codiceDa(anno, (riga ? riga.ultimo : 0) + 1);
+  const riga = db.prepare("SELECT ultimo FROM contatore WHERE tipo = ? AND anno = ?").get(tipo, anno);
+  return riga ? riga.ultimo : 0;
+}
+
+function prossimoCodice() {
+  return codiceDa(new Date().getFullYear(), ultimoSeq("spedizione") + 1);
+}
+
+const RIGA_SPEDIZIONE = `SELECT codice, creato_at, vettore, mittente, cliente_codice, destinatario,
+                                indirizzo, cap_citta, colli, bordero FROM spedizioni`;
+
+const mappaSpedizione = (r) => ({
+  codice: r.codice,
+  data: r.creato_at,
+  vettore: r.vettore,
+  mittente: r.mittente,
+  clienteCodice: r.cliente_codice,
+  nome: r.destinatario,
+  indirizzo: r.indirizzo,
+  capCitta: r.cap_citta,
+  colli: r.colli,
+  bordero: r.bordero,
+});
+
+/** Spedizioni di un giorno (data locale YYYY-MM-DD), opzionalmente di un vettore. */
+function spedizioniDelGiorno(giorno, vettore) {
+  const righe = db.prepare(`${RIGA_SPEDIZIONE} ORDER BY id`).all();
+  return righe
+    .map(mappaSpedizione)
+    .filter((r) => giornoLocale(r.data) === giorno && (!vettore || r.vettore === vettore));
+}
+
+function giornoLocale(iso) {
+  const d = new Date(iso);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function borderoDettaglio(numero) {
+  const b = db.prepare("SELECT numero, creato_at, giorno, vettore, mittente FROM bordero WHERE numero = ?").get(numero);
+  if (!b) return null;
+  const righe = db.prepare(`${RIGA_SPEDIZIONE} WHERE bordero = ? ORDER BY id`).all(numero).map(mappaSpedizione);
+  return {
+    numero: b.numero,
+    creatoAt: b.creato_at,
+    giorno: b.giorno,
+    vettore: b.vettore,
+    mittente: b.mittente,
+    righe,
+    colli: righe.reduce((n, r) => n + r.colli, 0),
+  };
+}
+
+function elencoBordero() {
+  return db
+    .prepare(
+      `SELECT b.numero, b.giorno, b.vettore, b.creato_at,
+              (SELECT COUNT(*) FROM spedizioni s WHERE s.bordero = b.numero) AS spedizioni,
+              (SELECT IFNULL(SUM(s.colli), 0) FROM spedizioni s WHERE s.bordero = b.numero) AS colli
+       FROM bordero b ORDER BY b.id DESC LIMIT 50`
+    )
+    .all()
+    .map((r) => ({
+      numero: r.numero,
+      giorno: r.giorno,
+      vettore: r.vettore,
+      creatoAt: r.creato_at,
+      spedizioni: r.spedizioni,
+      colli: r.colli,
+    }));
 }
 
 const LIMITE_RICERCA = 50;
@@ -247,24 +379,10 @@ function stato(q) {
     sedi,
     mittente: sedi.includes(mittente) ? mittente : sedi[0] || "",
     vettori: db.prepare("SELECT nome FROM vettori ORDER BY ordine, id").all().map((r) => r.nome),
-    storico: db
-      .prepare(
-        `SELECT codice, creato_at, vettore, mittente, cliente_codice, destinatario, indirizzo, cap_citta, colli
-         FROM spedizioni ORDER BY id DESC LIMIT 200`
-      )
-      .all()
-      .map((r) => ({
-        codice: r.codice,
-        data: r.creato_at,
-        vettore: r.vettore,
-        mittente: r.mittente,
-        clienteCodice: r.cliente_codice,
-        nome: r.destinatario,
-        indirizzo: r.indirizzo,
-        capCitta: r.cap_citta,
-        colli: r.colli,
-      })),
+    storico: db.prepare(`${RIGA_SPEDIZIONE} ORDER BY id DESC LIMIT 200`).all().map(mappaSpedizione),
+    bordero: elencoBordero(),
     prossimoCodice: prossimoCodice(),
+    oggi: giornoLocale(new Date().toISOString()),
   };
 }
 
@@ -364,6 +482,42 @@ const server = http.createServer(async (req, res) => {
         colli: Math.max(1, Math.min(99, Number(b.colli) || 1)),
       });
       return json(res, 200, { codice, stato: stato(b.q || "") });
+    }
+
+    if (url.pathname === "/api/spedizioni" && req.method === "GET") {
+      const giorno = url.searchParams.get("giorno") || giornoLocale(new Date().toISOString());
+      return json(res, 200, {
+        giorno,
+        spedizioni: spedizioniDelGiorno(giorno, url.searchParams.get("vettore") || ""),
+      });
+    }
+
+    if (url.pathname === "/api/bordero" && req.method === "GET") {
+      const numero = url.searchParams.get("numero");
+      if (numero) {
+        const b = borderoDettaglio(numero);
+        return b ? json(res, 200, b) : json(res, 404, { errore: "borderò inesistente" });
+      }
+      return json(res, 200, { bordero: elencoBordero() });
+    }
+
+    if (url.pathname === "/api/bordero" && req.method === "POST") {
+      const b = JSON.parse((await leggiCorpo(req)) || "{}");
+      const codici = (Array.isArray(b.codici) ? b.codici : []).map(String).filter(Boolean);
+      if (!codici.length) return json(res, 400, { errore: "Nessuna spedizione selezionata" });
+      if (!b.vettore || !b.mittente) return json(res, 400, { errore: "dati incompleti" });
+      let numero;
+      try {
+        numero = creaBordero({
+          codici,
+          vettore: String(b.vettore),
+          mittente: String(b.mittente),
+          giorno: String(b.giorno || giornoLocale(new Date().toISOString())),
+        });
+      } catch (e) {
+        return json(res, 400, { errore: e.message });
+      }
+      return json(res, 200, { bordero: borderoDettaglio(numero), stato: stato("") });
     }
 
     if (url.pathname.startsWith("/api/")) return json(res, 404, { errore: "endpoint sconosciuto" });

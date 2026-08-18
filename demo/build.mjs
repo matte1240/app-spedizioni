@@ -41,6 +41,18 @@ const clienti = righe
   .filter((c) => c[1])
   .sort((a, b) => a[1].localeCompare(b[1], "it"));
 
+/* Il markup viene preso da app/index.html: una sola fonte per la navigazione. */
+const indice = leggi(path.join(radice, "app", "index.html"));
+const corpo = indice
+  .slice(indice.indexOf("<body>") + 6, indice.indexOf("</body>"))
+  .replace(/<script[^>]*><\/script>/g, "")
+  .trim();
+const avviso = `<div class="avviso">
+    <strong>Ambiente di prova</strong>
+    <span>CLIENTI clienti reali caricati · i dati restano nel tuo browser, non su un server</span>
+    <button type="button" onclick="azzeraDemo()">Azzera dati di prova</button>
+  </div>`;
+
 const nocturne = leggi(path.join(radice, "app", "nocturne.css")).replace(/@import url\([^)]*\);/, "");
 const appCss = leggi(path.join(radice, "app", "app.css"));
 const appJs = leggi(path.join(radice, "app", "app.js"));
@@ -69,27 +81,7 @@ ${appCss}
 .avviso button:hover { background: color-mix(in srgb, var(--color-text) 8%, transparent); }
 </style>
 
-<div class="app">
-  <div class="avviso">
-    <strong>Ambiente di prova</strong>
-    <span>${clienti.length} clienti reali caricati · le spedizioni restano nel tuo browser, non su un server</span>
-    <button type="button" onclick="azzeraDemo()">Azzera dati di prova</button>
-  </div>
-  <nav class="nav app-nav">
-    <div class="nav-brand app-brand">
-      <span class="brand-mark">ET</span>
-      <span>Etichette di spedizione</span>
-    </div>
-    <a href="#nuova" data-tab="nuova">Nuova etichetta</a>
-    <a href="#storico" data-tab="storico">Storico</a>
-    <a href="#rubrica" data-tab="rubrica">Anagrafica</a>
-    <div class="nav-meta text-muted">
-      <span class="dot"></span>
-      <span>A4 adesivo · 2 etichette</span>
-    </div>
-  </nav>
-  <main id="view"></main>
-</div>
+${corpo.replace('<div class="app">', '<div class="app">\n  ' + avviso.replace("CLIENTI", clienti.length))}
 
 <script>window.CLIENTI_DEMO = ${JSON.stringify(clienti)};</script>
 <script>${demoApi}</script>

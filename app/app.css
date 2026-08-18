@@ -33,7 +33,7 @@ body { margin: 0; }
 .page-sub { font-size: 13px; margin: 0; }
 .stack-10 { display: flex; flex-direction: column; gap: 10px; }
 .row-between { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-.num { font-variant-numeric: tabular-nums; }
+.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .cell-right { text-align: right; }
 select.input { appearance: none; }
 
@@ -146,6 +146,64 @@ select.input { appearance: none; }
   flex: 1; display: grid; place-items: center;
   font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;
   color: rgba(23, 24, 31, 0.3);
+}
+
+/* — borderò: riga selezionabile — */
+.riga-sped { cursor: pointer; }
+.riga-sped input { width: 15px; height: 15px; flex: none; accent-color: var(--color-accent); cursor: pointer; }
+.riga-sped .contact-text { flex: 1; }
+.riga-usata { opacity: 0.5; cursor: default; }
+.riga-usata input { cursor: default; }
+
+/* — borderò: documento stampabile — */
+/* height auto + min-height: se le righe vanno a capo più del previsto la pagina
+   si allunga e il browser ne stampa un'altra, invece di tagliare il contenuto. */
+.bordero-sheet { height: auto; min-height: 297mm; padding: 14mm 14mm 10mm; gap: 5mm; }
+.bordero-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10mm; }
+.bordero-numero { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; margin-top: 1mm; }
+.bordero-meta { display: flex; gap: 8mm; text-align: right; }
+.bordero-meta div { display: flex; flex-direction: column; gap: 1mm; }
+.bordero-meta span {
+  font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.55;
+}
+.bordero-meta strong { font-size: 13px; font-weight: 600; }
+
+.bordero-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.bordero-table th {
+  text-align: left; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
+  opacity: 0.55; padding: 0 3mm 2mm 0; border-bottom: 1px solid #17181f;
+}
+.bordero-table td {
+  padding: 1.9mm 3mm 1.9mm 0;
+  border-bottom: 1px solid rgba(23, 24, 31, 0.18);
+  vertical-align: top;
+}
+.bordero-table tr { break-inside: avoid; }
+/* Il codice spedizione non deve andare a capo: raddoppierebbe l'altezza della riga. */
+.bordero-table td:nth-child(2) { white-space: nowrap; padding-right: 4mm; }
+.bordero-table th:nth-child(1), .bordero-table td:nth-child(1) { width: 7mm; opacity: 0.55; }
+.bordero-table .col-colli { text-align: right; padding-right: 0; font-variant-numeric: tabular-nums; }
+.bordero-table td:nth-child(3) { font-weight: 600; }
+.bordero-vuoto { text-align: center; padding: 8mm 0; opacity: 0.45; }
+
+.bordero-totali {
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding-top: 2mm;
+  font-size: 13px;
+}
+.bordero-totali span { font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.55; }
+
+.bordero-firme { display: flex; gap: 10mm; margin-top: 4mm; }
+.bordero-firme .firma { flex: 1; display: flex; flex-direction: column; gap: 8mm; }
+.bordero-firme span { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.55; }
+.bordero-firme .riga-firma { border-bottom: 1px solid #17181f; }
+
+.bordero-pie {
+  margin-top: auto;
+  display: flex; justify-content: space-between; gap: 8mm;
+  padding-top: 3mm;
+  border-top: 1px solid rgba(23, 24, 31, 0.25);
+  font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.55;
 }
 
 /* — storico — */

@@ -19,7 +19,20 @@ const stato = {
   prossimoCodice: "",
   ristampa: null,
   messaggio: null,
+  // borderò
+  oggi: "",
+  bGiorno: "",
+  bVettore: "",
+  bSpedizioni: [],
+  bSel: [],
+  bAperto: null,
+  bordero: [],
 };
+
+/* Righe per pagina: l'ultima pagina porta anche totali e firme, quindi ne
+   contiene meno (misurato sul foglio A4 reale). */
+const RIGHE_PAGINA = 15;
+const RIGHE_ULTIMA = 12;
 
 const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -45,7 +58,11 @@ function applicaStato(s) {
   stato.mittente = s.mittente;
   stato.prossimoCodice = s.prossimoCodice;
   stato.sediTesto = s.sedi.join("\n");
+  stato.bordero = s.bordero || [];
+  stato.oggi = s.oggi || stato.oggi;
+  if (!stato.bGiorno) stato.bGiorno = stato.oggi;
   if (!stato.vettore || !s.vettori.includes(stato.vettore)) stato.vettore = s.vettori[0] || "";
+  if (!stato.bVettore || !s.vettori.includes(stato.bVettore)) stato.bVettore = s.vettori[0] || "";
   if (!stato.sel) stato.sel = s.clienti[0] || null;
 }
 
@@ -227,6 +244,232 @@ function htmlNuova() {
   </div>`;
 }
 
+/* — borderò — */
+
+function dataItaliana(giorno) {
+  const [a, m, g] = String(giorno || "").split("-");
+  return g ? `${g}/${m}/${a}` : giorno;
+}
+
+/** Il borderò mostrato: quello aperto, oppure la bozza con le spedizioni spuntate. */
+function borderoCorrente() {
+  if (stato.bAperto) return stato.bAperto;
+  const righe = stato.bSpedizioni.filter((s) => stato.bSel.includes(s.codice));
+  return {
+    numero: "bozza",
+    giorno: stato.bGiorno,
+    vettore: stato.bVettore,
+    mittente: (righe[0] && righe[0].mittente) || stato.mittente,
+    righe,
+    colli: righe.reduce((n, r) => n + r.colli, 0),
+  };
+}
+
+/** Divide le righe in pagine A4, riservando spazio a totali e firme sull'ultima. */
+function impagina(righe) {
+  if (righe.length <= RIGHE_ULTIMA) return [righe];
+  const prime = righe.slice(0, righe.length - RIGHE_ULTIMA);
+  const quante = Math.ceil(prime.length / RIGHE_PAGINA);
+  const per = Math.ceil(prime.length / quante);
+  const pagine = [];
+  for (let i = 0; i < prime.length; i += per) pagine.push(prime.slice(i, i + per));
+  pagine.push(righe.slice(righe.length - RIGHE_ULTIMA));
+  return pagine;
+}
+
+function htmlPaginaBordero(b, righe, pagina, pagine, primo) {
+  const ultima = pagina === pagine;
+  return `
+    <div class="sheet bordero-sheet">
+      <div class="bordero-head">
+        <div>
+          <div class="label-kicker">Borderò di consegna</div>
+          <div class="bordero-numero">${esc(b.numero === "bozza" ? "BOZZA" : b.numero)}</div>
+        </div>
+        <div class="bordero-meta">
+          <div><span>Vettore</span><strong>${esc(b.vettore)}</strong></div>
+          <div><span>Data</span><strong>${esc(dataItaliana(b.giorno))}</strong></div>
+          <div><span>Mittente</span><strong>${esc(b.mittente)}</strong></div>
+        </div>
+      </div>
+      <table class="bordero-table">
+        <thead>
+          <tr><th>#</th><th>Spedizione</th><th>Destinatario</th><th>Indirizzo</th><th>Località</th><th class="col-colli">Colli</th></tr>
+        </thead>
+        <tbody>
+          ${
+            righe.length
+              ? righe
+                  .map(
+                    (r, i) => `
+            <tr>
+              <td>${primo + i + 1}</td>
+              <td class="num">${esc(r.codice)}</td>
+              <td>${esc(r.nome)}</td>
+              <td>${esc(r.indirizzo)}</td>
+              <td>${esc(r.capCitta)}</td>
+              <td class="col-colli">${r.colli}</td>
+            </tr>`
+                  )
+                  .join("")
+              : `<tr><td colspan="6" class="bordero-vuoto">Nessuna spedizione selezionata</td></tr>`
+          }
+        </tbody>
+      </table>
+      ${
+        ultima
+          ? `<div class="bordero-totali">
+               <span>Totale</span>
+               <strong>${b.righe.length} ${b.righe.length === 1 ? "spedizione" : "spedizioni"} · ${b.colli} ${
+              b.colli === 1 ? "collo" : "colli"
+            }</strong>
+             </div>
+             <div class="bordero-firme">
+               <div class="firma"><span>Consegnato da</span><div class="riga-firma"></div></div>
+               <div class="firma"><span>Ritirato da (autista) — data e ora</span><div class="riga-firma"></div></div>
+             </div>`
+          : ""
+      }
+      <div class="bordero-pie">
+        <span>${esc(b.mittente)}</span>
+        <span>Pagina ${pagina} di ${pagine}</span>
+      </div>
+    </div>`;
+}
+
+function htmlAnteprimaBordero() {
+  const b = borderoCorrente();
+  const pagine = impagina(b.righe);
+  let primo = 0;
+  const fogli = pagine.map((righe, i) => {
+    const html = htmlPaginaBordero(b, righe, i + 1, pagine.length, primo);
+    primo += righe.length;
+    return html;
+  });
+  const altezza = Math.round(pagine.length * 297 * 3.7795 * 0.55 + (pagine.length - 1) * 18);
+  return `
+    <div class="preview-col">
+      <div class="preview-head">
+        <h6 class="text-muted" style="margin:0">Anteprima borderò</h6>
+        <span class="text-muted" style="font-size:12px">${esc(b.numero === "bozza" ? "non ancora generato" : b.numero)}</span>
+      </div>
+      <div class="print-scale" style="height:${altezza}px">
+        <div class="print-area">${fogli.join("")}</div>
+      </div>
+    </div>`;
+}
+
+function htmlBordero() {
+  const b = borderoCorrente();
+  const disponibili = stato.bSpedizioni.filter((s) => !s.bordero);
+  const tutteSpuntate = disponibili.length > 0 && disponibili.every((s) => stato.bSel.includes(s.codice));
+  return `
+  <div class="nuova">
+    <div class="form-col">
+      <div>
+        <h2 class="page-title">Borderò</h2>
+        <p class="page-sub text-muted">La distinta da consegnare all'autista: scegli vettore e giornata, spunta le spedizioni e stampa.</p>
+      </div>
+
+      <div class="field">
+        <label>Vettore</label>
+        <div class="chips">
+          ${stato.vettori
+            .map(
+              (v) =>
+                `<button class="chip" type="button" aria-pressed="${v === stato.bVettore}" data-bvettore="${esc(v)}">${esc(v)}</button>`
+            )
+            .join("")}
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="giorno">Giornata</label>
+        <input class="input" type="date" id="giorno" value="${esc(stato.bGiorno)}">
+      </div>
+
+      <div class="stack-10">
+        <div class="row-between">
+          <h6 class="section-label">Spedizioni</h6>
+          ${
+            disponibili.length
+              ? `<button class="btn btn-ghost" type="button" id="spunta-tutte">${
+                  tutteSpuntate ? "Deseleziona tutte" : "Seleziona tutte"
+                }</button>`
+              : ""
+          }
+        </div>
+        <div class="contact-list">
+          ${
+            stato.bSpedizioni.length
+              ? stato.bSpedizioni.map(htmlRigaSpedizione).join("")
+              : `<div class="list-empty text-muted">Nessuna spedizione per ${esc(stato.bVettore)} il ${esc(
+                  dataItaliana(stato.bGiorno)
+                )}.</div>`
+          }
+        </div>
+      </div>
+
+      <div class="colli">
+        <span class="colli-label">${b.righe.length} ${b.righe.length === 1 ? "spedizione" : "spedizioni"}</span>
+        <span class="colli-count">${b.colli} ${b.colli === 1 ? "collo" : "colli"}</span>
+      </div>
+
+      <div class="stack-10">
+        ${
+          stato.bAperto
+            ? `<p class="note text-muted">Borderò ${esc(stato.bAperto.numero)} generato.</p>
+               <button class="btn btn-primary btn-block btn-stampa" type="button" id="stampa-bordero">Stampa borderò</button>
+               <button class="btn btn-secondary btn-block" type="button" id="nuovo-bordero">Prepara un altro borderò</button>`
+            : `<p class="note text-muted">Le spedizioni inserite in un borderò non possono finire in un secondo borderò.</p>
+               <button class="btn btn-primary btn-block btn-stampa" type="button" id="genera-bordero"${
+                 stato.bSel.length ? "" : " disabled"
+               }>Genera e stampa</button>`
+        }
+      </div>
+
+      ${
+        stato.bordero.length
+          ? `<div class="stack-10">
+               <h6 class="text-muted" style="margin:0">Borderò recenti</h6>
+               <table class="table">
+                 <tbody>
+                   ${stato.bordero
+                     .map(
+                       (r) => `
+                     <tr>
+                       <td class="num">${esc(r.numero)}</td>
+                       <td class="text-muted">${esc(dataItaliana(r.giorno))}</td>
+                       <td>${esc(r.vettore)}</td>
+                       <td class="text-muted">${r.spedizioni} sped. · ${r.colli} colli</td>
+                       <td class="cell-right"><button class="btn btn-ghost" type="button" data-apri="${esc(r.numero)}">Apri</button></td>
+                     </tr>`
+                     )
+                     .join("")}
+                 </tbody>
+               </table>
+             </div>`
+          : ""
+      }
+    </div>
+    ${htmlAnteprimaBordero()}
+  </div>`;
+}
+
+function htmlRigaSpedizione(s) {
+  const inBordero = !!s.bordero;
+  const spuntata = stato.bSel.includes(s.codice);
+  return `
+    <label class="contact riga-sped${inBordero ? " riga-usata" : ""}">
+      <input type="checkbox" data-sped="${esc(s.codice)}"${spuntata ? " checked" : ""}${inBordero ? " disabled" : ""}>
+      <span class="contact-text">
+        <span class="contact-name">${esc(s.nome)}</span>
+        <span class="contact-sede">${esc(s.codice)} · ${esc(s.capCitta)}</span>
+      </span>
+      <span class="contact-mark">${inBordero ? esc(s.bordero) : s.colli + (s.colli === 1 ? " collo" : " colli")}</span>
+    </label>`;
+}
+
 function htmlStorico() {
   return `
   <div class="storico">
@@ -235,7 +478,7 @@ function htmlStorico() {
     ${
       stato.storico.length
         ? `<table class="table">
-      <thead><tr><th>Codice</th><th>Data</th><th>Vettore</th><th>Destinatario</th><th>Città</th><th>Colli</th><th></th></tr></thead>
+      <thead><tr><th>Codice</th><th>Data</th><th>Vettore</th><th>Destinatario</th><th>Città</th><th>Colli</th><th>Borderò</th><th></th></tr></thead>
       <tbody>
         ${stato.storico
           .map(
@@ -247,6 +490,7 @@ function htmlStorico() {
             <td>${esc(r.nome)}</td>
             <td class="text-muted">${esc(r.capCitta)}</td>
             <td>${r.colli}</td>
+            <td class="num text-muted">${r.bordero ? esc(r.bordero) : "—"}</td>
             <td class="cell-right"><button class="btn btn-ghost" type="button" data-ristampa="${esc(r.codice)}">Ristampa</button></td>
           </tr>`
           )
@@ -323,7 +567,8 @@ function render() {
   const focusId = attivo && attivo.id;
   const caret = attivo && "selectionStart" in attivo ? attivo.selectionStart : null;
 
-  view.innerHTML = stato.tab === "storico" ? htmlStorico() : stato.tab === "rubrica" ? htmlRubrica() : htmlNuova();
+  const pagine = { storico: htmlStorico, rubrica: htmlRubrica, bordero: htmlBordero, nuova: htmlNuova };
+  view.innerHTML = (pagine[stato.tab] || htmlNuova)();
 
   document.querySelectorAll(".app-nav a").forEach((a) => {
     if (a.dataset.tab === stato.tab) a.setAttribute("aria-current", "page");
@@ -345,6 +590,20 @@ function vaiA(tab) {
   stato.tab = tab;
   if (location.hash !== "#" + tab) history.replaceState(null, "", "#" + tab);
   render();
+  if (tab === "bordero" && !stato.bAperto) caricaGiornata();
+}
+
+async function caricaGiornata() {
+  try {
+    const r = await api(
+      `/api/spedizioni?giorno=${encodeURIComponent(stato.bGiorno)}&vettore=${encodeURIComponent(stato.bVettore)}`
+    );
+    stato.bSpedizioni = r.spedizioni;
+    stato.bSel = r.spedizioni.filter((s) => !s.bordero).map((s) => s.codice);
+    render();
+  } catch (err) {
+    console.error(err);
+  }
 }
 
 document.querySelector(".app-nav").addEventListener("click", (e) => {
@@ -395,6 +654,48 @@ view.addEventListener("click", async (e) => {
     stato.colli = Math.max(1, stato.colli - 1);
     stato.ristampa = null;
     return render();
+  }
+
+  const bVettore = t.closest("[data-bvettore]");
+  if (bVettore) {
+    stato.bVettore = bVettore.dataset.bvettore;
+    stato.bAperto = null;
+    render();
+    return caricaGiornata();
+  }
+
+  if (t.closest("#spunta-tutte")) {
+    const disponibili = stato.bSpedizioni.filter((s) => !s.bordero);
+    const tutte = disponibili.every((s) => stato.bSel.includes(s.codice));
+    stato.bSel = tutte ? [] : disponibili.map((s) => s.codice);
+    return render();
+  }
+
+  if (t.closest("#genera-bordero")) return generaBordero();
+  if (t.closest("#stampa-bordero")) {
+    setTimeout(() => (window.stampaLocale || window.print)(), 60);
+    return;
+  }
+  if (t.closest("#nuovo-bordero")) {
+    stato.bAperto = null;
+    render();
+    return caricaGiornata();
+  }
+
+  const apri = t.closest("[data-apri]");
+  if (apri) {
+    try {
+      const b = await api("/api/bordero?numero=" + encodeURIComponent(apri.dataset.apri));
+      stato.bAperto = b;
+      stato.bGiorno = b.giorno;
+      stato.bVettore = b.vettore;
+      stato.bSpedizioni = b.righe;
+      stato.bSel = b.righe.map((r) => r.codice);
+      render();
+    } catch (err) {
+      alert("Impossibile aprire il borderò: " + err.message);
+    }
+    return;
   }
 
   if (t.closest("#stampa")) return stampa();
@@ -481,6 +782,17 @@ view.addEventListener("change", async (e) => {
     }
     return;
   }
+  if (e.target.id === "giorno") {
+    stato.bGiorno = e.target.value;
+    stato.bAperto = null;
+    render();
+    return caricaGiornata();
+  }
+  if (e.target.dataset && e.target.dataset.sped) {
+    const codice = e.target.dataset.sped;
+    stato.bSel = e.target.checked ? stato.bSel.concat(codice) : stato.bSel.filter((c) => c !== codice);
+    return render();
+  }
   if (e.target.id === "file-csv" && e.target.files[0]) {
     stato.csv = await e.target.files[0].text();
     stato.messaggio = null;
@@ -513,6 +825,29 @@ async function preparaRistampa(codiceSpedizione) {
     render();
   } catch (err) {
     console.error(err);
+  }
+}
+
+async function generaBordero() {
+  try {
+    const r = await api("/api/bordero", {
+      method: "POST",
+      body: JSON.stringify({
+        codici: stato.bSel,
+        vettore: stato.bVettore,
+        mittente: stato.mittente,
+        giorno: stato.bGiorno,
+      }),
+    });
+    stato.bAperto = r.bordero;
+    stato.bSpedizioni = r.bordero.righe;
+    stato.bSel = r.bordero.righe.map((x) => x.codice);
+    stato.bordero = r.stato.bordero;
+    stato.storico = r.stato.storico;
+    render();
+    setTimeout(() => (window.stampaLocale || window.print)(), 60);
+  } catch (err) {
+    alert("Impossibile generare il borderò: " + err.message);
   }
 }
 
@@ -566,8 +901,7 @@ async function avvia() {
     return;
   }
   const hash = location.hash.replace("#", "");
-  if (["nuova", "storico", "rubrica"].includes(hash)) stato.tab = hash;
-  render();
+  vaiA(["nuova", "storico", "rubrica", "bordero"].includes(hash) ? hash : "nuova");
 }
 
 avvia();
