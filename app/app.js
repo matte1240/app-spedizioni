@@ -18,6 +18,7 @@ const stato = {
   sediTesto: "",
   prossimoCodice: "",
   ristampa: null,
+  modifica: null, // spedizione dello storico aperta in modifica: { codice }
   messaggio: null,
   // borderò
   oggi: "",
@@ -131,8 +132,15 @@ function htmlSlot(l) {
     </div>`;
 }
 
+/** Il codice in anteprima: quello in modifica, quello in ristampa, o il prossimo libero. */
+function codiceCorrente() {
+  if (stato.modifica) return stato.modifica.codice;
+  if (stato.ristampa) return stato.ristampa.codice;
+  return stato.prossimoCodice;
+}
+
 function htmlAnteprima() {
-  const codice = stato.ristampa ? stato.ristampa.codice : stato.prossimoCodice;
+  const codice = codiceCorrente();
   const sheets = fogli(etichette(codice));
   const altezza = Math.round(sheets.length * 297 * 3.7795 * 0.55 + (sheets.length - 1) * 18);
   return `
@@ -168,8 +176,12 @@ function htmlNuova() {
   <div class="nuova">
     <div class="form-col">
       <div>
-        <h2 class="page-title">Nuova etichetta</h2>
-        <p class="page-sub text-muted">Una etichetta per collo. Il numero progressivo è assegnato alla stampa.</p>
+        <h2 class="page-title">${stato.modifica ? "Modifica spedizione" : "Nuova etichetta"}</h2>
+        <p class="page-sub text-muted">${
+          stato.modifica
+            ? "Stai correggendo " + esc(stato.modifica.codice) + ": il codice e la data restano quelli originali."
+            : "Una etichetta per collo. Il numero progressivo è assegnato alla stampa."
+        }</p>
       </div>
 
       <div class="field">
@@ -232,12 +244,20 @@ function htmlNuova() {
         <p class="note text-muted">${stato.colli} ${stato.colli === 1 ? "etichetta" : "etichette"} · ${sheets} ${
     sheets === 1 ? "foglio A4" : "fogli A4"
   }${stato.ristampa ? " · ristampa di " + esc(stato.ristampa.codice) : ""}</p>
-        <button class="btn btn-primary btn-block btn-stampa" type="button" id="stampa"${stato.sel ? "" : " disabled"}>${
-    stato.ristampa ? "Ristampa" : "Stampa"
-  }</button>
-        <button class="btn btn-secondary btn-block" type="button" id="salva"${
-          stato.sel && stato.sel.id && !stato.ristampa ? "" : " disabled"
-        }>Salva senza stampare</button>
+        ${
+          stato.modifica
+            ? `<button class="btn btn-primary btn-block btn-stampa" type="button" id="aggiorna">Salva modifiche</button>
+               <button class="btn btn-secondary btn-block" type="button" id="aggiorna-stampa">Salva e ristampa</button>
+               <button class="btn btn-ghost btn-block" type="button" id="annulla-modifica">Annulla</button>`
+            : `<button class="btn btn-primary btn-block btn-stampa" type="button" id="stampa"${
+                stato.sel ? "" : " disabled"
+              }>${stato.ristampa ? "Ristampa" : "Stampa"}</button>
+               <button class="btn btn-secondary btn-block" type="button" id="salva"${
+                 stato.sel && stato.sel.id && !stato.ristampa ? "" : " disabled"
+               }>Salva senza stampare</button>`
+        }
+        <p class="note text-muted">Nella finestra di stampa: scala 100% e margini «Nessuno», altrimenti le etichette non
+        coincidono con la fustella del foglio adesivo.</p>
       </div>
     </div>
     ${htmlAnteprima()}
@@ -474,7 +494,9 @@ function htmlStorico() {
   return `
   <div class="storico">
     <h2 class="page-title">Storico</h2>
-    <p class="page-sub text-muted">Ristampa riapre i dati nel modulo mantenendo il codice originale.</p>
+    <p class="page-sub text-muted">Ristampa riapre i dati nel modulo mantenendo il codice originale. Una spedizione si
+    può correggere o eliminare finché non entra in un borderò.</p>
+    ${stato.messaggio ? `<p class="note text-muted">${esc(stato.messaggio)}</p>` : ""}
     ${
       stato.storico.length
         ? `<table class="table">
@@ -491,7 +513,15 @@ function htmlStorico() {
             <td class="text-muted">${esc(r.capCitta)}</td>
             <td>${r.colli}</td>
             <td class="num text-muted">${r.bordero ? esc(r.bordero) : "—"}</td>
-            <td class="cell-right"><button class="btn btn-ghost" type="button" data-ristampa="${esc(r.codice)}">Ristampa</button></td>
+            <td class="cell-right azioni-riga">
+              <button class="btn btn-ghost" type="button" data-ristampa="${esc(r.codice)}">Ristampa</button>
+              <button class="btn btn-ghost" type="button" data-modifica="${esc(r.codice)}"${
+              r.bordero ? ` disabled title="Già nel borderò ${esc(r.bordero)}"` : ""
+            }>Modifica</button>
+              <button class="btn btn-ghost btn-elimina" type="button" data-elimina="${esc(r.codice)}"${
+              r.bordero ? ` disabled title="Già nel borderò ${esc(r.bordero)}"` : ""
+            }>Elimina</button>
+            </td>
           </tr>`
           )
           .join("")}
@@ -610,6 +640,11 @@ document.querySelector(".app-nav").addEventListener("click", (e) => {
   const a = e.target.closest("a[data-tab]");
   if (!a) return;
   e.preventDefault();
+  stato.messaggio = null;
+  if (a.dataset.tab === "nuova") {
+    stato.modifica = null;
+    stato.ristampa = null;
+  }
   vaiA(a.dataset.tab);
 });
 
@@ -712,6 +747,21 @@ view.addEventListener("click", async (e) => {
   const ristampa = t.closest("[data-ristampa]");
   if (ristampa) return preparaRistampa(ristampa.dataset.ristampa);
 
+  const modifica = t.closest("[data-modifica]");
+  if (modifica) return preparaModifica(modifica.dataset.modifica);
+
+  const elimina = t.closest("[data-elimina]");
+  if (elimina) return eliminaSpedizione(elimina.dataset.elimina);
+
+  if (t.closest("#aggiorna")) return salvaModifica(false);
+  if (t.closest("#aggiorna-stampa")) return salvaModifica(true);
+  if (t.closest("#annulla-modifica")) {
+    stato.modifica = null;
+    stato.sel = stato.risultati[0] || null;
+    stato.colli = 1;
+    return vaiA("storico");
+  }
+
   const usa = t.closest("[data-usa]");
   if (usa) {
     stato.sel = stato.risultati.find((c) => c.id === Number(usa.dataset.usa)) || stato.sel;
@@ -802,12 +852,16 @@ view.addEventListener("change", async (e) => {
 
 /* — azioni — */
 
-async function preparaRistampa(codiceSpedizione) {
+/** Riporta nel modulo una spedizione dello storico, per ristamparla o correggerla. */
+async function apriNelModulo(codiceSpedizione, modo) {
   const r = stato.storico.find((x) => x.codice === codiceSpedizione);
   if (!r) return;
   stato.colli = r.colli;
   stato.vettore = stato.vettori.includes(r.vettore) ? r.vettore : stato.vettore;
-  stato.ristampa = { codice: r.codice };
+  if (stato.sedi.includes(r.mittente)) stato.mittente = r.mittente;
+  stato.ristampa = modo === "ristampa" ? { codice: r.codice } : null;
+  stato.modifica = modo === "modifica" ? { codice: r.codice } : null;
+  stato.messaggio = null;
   stato.cerca = r.clienteCodice || r.nome;
   stato.sel = {
     id: null,
@@ -825,6 +879,68 @@ async function preparaRistampa(codiceSpedizione) {
     render();
   } catch (err) {
     console.error(err);
+  }
+}
+
+const preparaRistampa = (codice) => apriNelModulo(codice, "ristampa");
+const preparaModifica = (codice) => apriNelModulo(codice, "modifica");
+
+/** Salva le correzioni sulla spedizione aperta: il codice e la data non cambiano. */
+async function salvaModifica(poiStampa) {
+  if (!stato.modifica) return;
+  const codice = stato.modifica.codice;
+  try {
+    const { stato: s } = await api("/api/spedizioni/" + encodeURIComponent(codice), {
+      method: "PUT",
+      body: JSON.stringify({
+        vettore: stato.vettore,
+        mittente: stato.mittente,
+        // Senza cliente in anagrafica valgono i dati già in etichetta.
+        clienteId: stato.sel && stato.sel.id,
+        clienteCodice: stato.sel ? stato.sel.codice : "",
+        destinatario: stato.sel ? stato.sel.ragione_sociale : "",
+        indirizzo: stato.sel ? stato.sel.indirizzo : "",
+        capCitta: stato.sel ? stato.sel.cap_citta : "",
+        colli: stato.colli,
+        q: stato.cerca,
+      }),
+    });
+    const sel = stato.sel;
+    applicaStato(s);
+    stato.sel = sel;
+    stato.modifica = null;
+    if (poiStampa) {
+      stato.ristampa = { codice };
+      render();
+      return setTimeout(() => (window.stampaLocale || window.print)(), 60);
+    }
+    stato.messaggio = `Spedizione ${codice} aggiornata.`;
+    vaiA("storico");
+  } catch (err) {
+    alert("Impossibile salvare le modifiche: " + err.message);
+  }
+}
+
+async function eliminaSpedizione(codice) {
+  const r = stato.storico.find((x) => x.codice === codice);
+  const dettaglio = r ? ` — ${r.nome}, ${r.colli} ${r.colli === 1 ? "collo" : "colli"}` : "";
+  if (!confirm(`Eliminare la spedizione ${codice}${dettaglio}?\nIl codice non verrà riutilizzato.`)) return;
+  try {
+    const { stato: s } = await api(
+      "/api/spedizioni/" + encodeURIComponent(codice) + "?q=" + encodeURIComponent(stato.cerca),
+      { method: "DELETE" }
+    );
+    const sel = stato.sel;
+    const cerca = stato.cerca;
+    applicaStato(s);
+    stato.sel = sel;
+    stato.cerca = cerca;
+    if (stato.modifica && stato.modifica.codice === codice) stato.modifica = null;
+    if (stato.ristampa && stato.ristampa.codice === codice) stato.ristampa = null;
+    stato.messaggio = `Spedizione ${codice} eliminata.`;
+    render();
+  } catch (err) {
+    alert("Impossibile eliminare la spedizione: " + err.message);
   }
 }
 

@@ -49,8 +49,19 @@ node demo/build.mjs [percorso/anagrafica.csv]
   borderò non può finire in un secondo (resta in elenco, barrata, con il numero a cui appartiene).
   Il documento si impagina da solo su più fogli A4 e l'ultima pagina porta totali e firme.
 - **Storico** — tutte le spedizioni registrate, con il borderò di appartenenza; `Ristampa` riapre i
-  dati nel modulo mantenendo il codice originale, senza consumare un nuovo numero.
+  dati nel modulo mantenendo il codice originale, senza consumare un nuovo numero. `Modifica`
+  corregge vettore, sede di partenza, destinatario e colli di una spedizione già stampata (codice e
+  data restano quelli originali), `Elimina` la cancella — il codice però non viene riutilizzato. Le
+  due azioni restano disponibili finché la spedizione non entra in un borderò: da quel momento sono
+  disattivate, perché il documento è già in mano all'autista.
 - **Rubrica** — importazione dei destinatari da CSV (incolla il testo oppure apri un file).
+
+## Stampa
+
+Le etichette vanno stampate **a scala 100% e con i margini su «Nessuno»**: il foglio è disegnato in
+millimetri (210 × 297 mm, due etichette da 148,5 mm) e deve coincidere con la fustella del foglio
+adesivo. In stampa l'interfaccia sparisce del tutto (`display: none`) e la pagina diventa bianca,
+così il foglio A4 resta l'unica cosa nel documento e il browser non impagina fogli in più.
 
 ## Numerazione
 
@@ -106,6 +117,8 @@ altrimenti il server.
 | POST   | `/api/sedi`       | `{ sedi }` — elenco delle sedi di partenza                     |
 | POST   | `/api/mittente`   | `{ mittente }` — memorizza la sede di partenza predefinita     |
 | POST   | `/api/spedizioni` | registra la spedizione e assegna il codice progressivo        |
+| PUT    | `/api/spedizioni/<codice>` | corregge una spedizione (409 se è già in un borderò) |
+| DELETE | `/api/spedizioni/<codice>` | elimina una spedizione (409 se è già in un borderò)  |
 
 ## Da definire
 

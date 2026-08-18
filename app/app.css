@@ -207,9 +207,14 @@ select.input { appearance: none; }
 }
 
 /* — storico — */
-.storico { padding: 28px 32px 64px; max-width: 900px; }
+.storico { padding: 28px 32px 64px; max-width: 1000px; }
 .storico .page-sub { margin: 0 0 24px; }
 .empty-state { padding: 18px 0; font-size: 13px; }
+.azioni-riga { display: flex; justify-content: flex-end; gap: 2px; white-space: nowrap; }
+/* Stessa saturazione dell'accento, tinta rossa: distingue l'azione distruttiva. */
+.btn-elimina { color: #d98484; }
+.btn-elimina:hover { background: color-mix(in srgb, #d98484 12%, transparent); }
+.btn-elimina:active { background: color-mix(in srgb, #d98484 20%, transparent); }
 
 /* — rubrica — */
 .rubrica {
@@ -230,12 +235,46 @@ select.input { appearance: none; }
   .nuova, .rubrica { grid-template-columns: minmax(0, 1fr); gap: 32px; }
 }
 
+/* — stampa —
+   Fuori dai fogli non deve restare niente: con `visibility: hidden` l'interfaccia
+   continuerebbe a occupare spazio e il browser stamperebbe pagine in più, per giunta
+   nere (lo sfondo scuro dell'app). Qui il resto è `display: none` e la pagina è bianca. */
 @media print {
-  body * { visibility: hidden; }
-  .print-area, .print-area * { visibility: visible; }
-  .print-scale { transform: none !important; height: auto !important; width: auto !important; }
-  .print-area { position: absolute; left: 0; top: 0; gap: 0 !important; }
-  .sheet { box-shadow: none !important; break-after: page; }
-  * , *::before, *::after { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   @page { size: A4; margin: 0; }
+
+  html, body, .app, #view {
+    background: #ffffff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+    height: auto !important;
+    display: block !important;
+  }
+  .app-nav, .form-col, .preview-head, .storico, .rubrica, .avviso { display: none !important; }
+  .nuova, .preview-col, .print-scale, .print-area {
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    gap: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    max-width: none !important;
+    overflow: visible !important;
+    transform: none !important;
+  }
+  /* L'altezza scende di 0,1 mm: l'arrotondamento dei millimetri in pixel non deve far
+     traboccare il foglio sulla pagina dopo, che uscirebbe vuota. Sullo stacco fra le due
+     etichette lo scarto è 0,05 mm, invisibile rispetto alla fustella. */
+  .sheet {
+    height: 296.9mm;
+    box-shadow: none !important;
+    margin: 0 !important;
+    overflow: hidden;
+    break-after: page;
+  }
+  .bordero-sheet { height: auto; min-height: 296.9mm; }
+  /* Senza questo l'ultimo foglio si porta dietro una pagina vuota. */
+  .print-area .sheet:last-child { break-after: auto; }
+  /* Solo i fogli forzano la resa dei colori: l'interfaccia scura non deve mai finire in stampa. */
+  .print-area, .print-area * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }

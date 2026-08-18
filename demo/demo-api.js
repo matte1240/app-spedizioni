@@ -249,6 +249,36 @@
       return { bordero: borderoDettaglio(numero), stato: stato("") };
     }
 
+    if (rotta.startsWith("/api/spedizioni/") && (metodo === "PUT" || metodo === "DELETE")) {
+      const codice = decodeURIComponent(rotta.slice("/api/spedizioni/".length));
+      const sp = db.spedizioni.find((s) => s.codice === codice);
+      if (!sp) throw new Error("spedizione inesistente");
+      if (sp.bordero)
+        throw new Error(
+          "La spedizione è nel borderò " + sp.bordero + ": non è più " + (metodo === "DELETE" ? "eliminabile." : "modificabile.")
+        );
+      if (metodo === "DELETE") {
+        // Il contatore non torna indietro: il codice resta bruciato, come sul server.
+        db.spedizioni = db.spedizioni.filter((s) => s.codice !== codice);
+        salva();
+        return { stato: stato(q) };
+      }
+      const c = db.clienti.find((x) => x.id === Number(corpo.clienteId));
+      const destinatario = c ? c.ragione_sociale : String(corpo.destinatario || "").trim();
+      if (!destinatario) throw new Error("destinatario mancante");
+      Object.assign(sp, {
+        vettore: String(corpo.vettore),
+        mittente: String(corpo.mittente),
+        clienteCodice: c ? c.codice : String(corpo.clienteCodice || ""),
+        nome: destinatario,
+        indirizzo: c ? c.indirizzo : String(corpo.indirizzo || ""),
+        capCitta: c ? c.cap_citta : String(corpo.capCitta || ""),
+        colli: Math.max(1, Math.min(99, Number(corpo.colli) || 1)),
+      });
+      salva();
+      return { codice, stato: stato(corpo.q || "") };
+    }
+
     if (rotta === "/api/spedizioni") {
       const c = db.clienti.find((x) => x.id === Number(corpo.clienteId));
       if (!c) throw new Error("cliente sconosciuto");
@@ -288,8 +318,9 @@
     finestra.document.write(
       `<!doctype html><html><head><meta charset="utf-8"><title>Etichette</title><style>${stili}
        html,body{margin:0;background:#fff}
-       .print-area{display:flex;flex-direction:column}
+       .print-area{display:block}
        .sheet{box-shadow:none !important;break-after:page}
+       .print-area .sheet:last-child{break-after:auto}
        @page{size:A4;margin:0}</style></head><body>${area.outerHTML}</body></html>`
     );
     finestra.document.close();
