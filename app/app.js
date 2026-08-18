@@ -16,10 +16,12 @@ const stato = {
   cerca: "",
   csv: "",
   sediTesto: "",
+  vettoriTesto: "",
   prossimoCodice: "",
   ristampa: null,
   modifica: null, // spedizione dello storico aperta in modifica: { codice }
   messaggio: null,
+  messaggioDove: null, // dove mostrarlo: csv, sedi, vettori, storico
   // borderò
   oggi: "",
   bGiorno: "",
@@ -27,6 +29,8 @@ const stato = {
   bSpedizioni: [],
   bSel: [],
   bAperto: null,
+  bNota: null, // avviso sul borderò aperto (es. righe aggiunte, da ristampare)
+  giornate: [],
   bordero: [],
 };
 
@@ -39,6 +43,18 @@ const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 const view = document.getElementById("view");
+
+/** L'esito dell'ultima azione, mostrato solo accanto ai bottoni che l'hanno prodotto. */
+const nota = (dove) =>
+  stato.messaggio && stato.messaggioDove === dove
+    ? `<p class="note text-muted">${esc(stato.messaggio)}</p>`
+    : "";
+
+/** Registra l'esito di un'azione e il punto dell'interfaccia in cui mostrarlo. */
+function segnala(dove, testo) {
+  stato.messaggioDove = dove;
+  stato.messaggio = testo;
+}
 
 async function api(path, opzioni) {
   // L'ambiente di prova (demo/) sostituisce il backend con uno locale al browser.
@@ -59,7 +75,9 @@ function applicaStato(s) {
   stato.mittente = s.mittente;
   stato.prossimoCodice = s.prossimoCodice;
   stato.sediTesto = s.sedi.join("\n");
+  stato.vettoriTesto = s.vettori.join("\n");
   stato.bordero = s.bordero || [];
+  stato.giornate = s.giornate || [];
   stato.oggi = s.oggi || stato.oggi;
   if (!stato.bGiorno) stato.bGiorno = stato.oggi;
   if (!stato.vettore || !s.vettori.includes(stato.vettore)) stato.vettore = s.vettori[0] || "";
@@ -271,6 +289,27 @@ function dataItaliana(giorno) {
   return g ? `${g}/${m}/${a}` : giorno;
 }
 
+/** Il menu delle giornate: quelle con spedizioni, più la data scelta se non ne ha. */
+function opzioniGiornata() {
+  const giorni = stato.giornate.slice();
+  if (stato.bGiorno && !giorni.some((g) => g.giorno === stato.bGiorno)) {
+    giorni.unshift({ giorno: stato.bGiorno, spedizioni: 0, colli: 0, liberi: 0 });
+  }
+  return giorni
+    .map((g) => {
+      // Il giorno per esteso sta nel campo data accanto: qui l'etichetta resta corta.
+      const etichetta = [
+        g.giorno === stato.oggi ? "Oggi" : dataItaliana(g.giorno),
+        g.spedizioni ? `${g.spedizioni} sped.` : "nessuna spedizione",
+        g.liberi ? `${g.liberi} liber${g.liberi === 1 ? "a" : "e"}` : "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      return `<option value="${esc(g.giorno)}"${g.giorno === stato.bGiorno ? " selected" : ""}>${esc(etichetta)}</option>`;
+    })
+    .join("");
+}
+
 /** Il borderò mostrato: quello aperto, oppure la bozza con le spedizioni spuntate. */
 function borderoCorrente() {
   if (stato.bAperto) return stato.bAperto;
@@ -404,8 +443,13 @@ function htmlBordero() {
       </div>
 
       <div class="field">
-        <label for="giorno">Giornata</label>
-        <input class="input" type="date" id="giorno" value="${esc(stato.bGiorno)}">
+        <label for="giornata">Giornata</label>
+        <div class="giornata-riga">
+          <select class="input" id="giornata">
+            ${opzioniGiornata()}
+          </select>
+          <input class="input" type="date" id="giorno" value="${esc(stato.bGiorno)}" title="Altra data">
+        </div>
       </div>
 
       <div class="stack-10">
@@ -438,9 +482,23 @@ function htmlBordero() {
       <div class="stack-10">
         ${
           stato.bAperto
-            ? `<p class="note text-muted">Borderò ${esc(stato.bAperto.numero)} generato.</p>
-               <button class="btn btn-primary btn-block btn-stampa" type="button" id="stampa-bordero">Stampa borderò</button>
-               <button class="btn btn-secondary btn-block" type="button" id="nuovo-bordero">Prepara un altro borderò</button>`
+            ? `<p class="note text-muted">${
+                stato.bNota
+                  ? esc(stato.bNota)
+                  : "Borderò " + esc(stato.bAperto.numero) +
+                    " generato. Finché resta la giornata puoi ancora aggiungere spedizioni: dopo, ristampalo."
+              }</p>
+               ${
+                 disponibili.length
+                   ? `<button class="btn btn-primary btn-block" type="button" id="aggiungi-bordero"${
+                       stato.bSel.length ? "" : " disabled"
+                     }>Aggiungi al borderò${stato.bSel.length ? ` (${stato.bSel.length})` : ""}</button>`
+                   : ""
+               }
+               <button class="btn ${
+                 disponibili.length ? "btn-secondary" : "btn-primary"
+               } btn-block btn-stampa" type="button" id="stampa-bordero">Stampa borderò</button>
+               <button class="btn btn-ghost btn-block" type="button" id="nuovo-bordero">Prepara un altro borderò</button>`
             : `<p class="note text-muted">Le spedizioni inserite in un borderò non possono finire in un secondo borderò.</p>
                <button class="btn btn-primary btn-block btn-stampa" type="button" id="genera-bordero"${
                  stato.bSel.length ? "" : " disabled"
@@ -496,7 +554,7 @@ function htmlStorico() {
     <h2 class="page-title">Storico</h2>
     <p class="page-sub text-muted">Ristampa riapre i dati nel modulo mantenendo il codice originale. Una spedizione si
     può correggere o eliminare finché non entra in un borderò.</p>
-    ${stato.messaggio ? `<p class="note text-muted">${esc(stato.messaggio)}</p>` : ""}
+    ${nota("storico")}
     ${
       stato.storico.length
         ? `<table class="table">
@@ -553,7 +611,7 @@ function htmlRubrica() {
         <input type="file" id="file-csv" accept=".csv,.txt" hidden>
       </div>
       <p class="note text-muted">L'importazione sostituisce l'anagrafica corrente. Dal gestionale esporta in CSV (in Excel: <em>Salva con nome → CSV UTF-8</em>).${
-        stato.messaggio ? " " + esc(stato.messaggio) : ""
+        stato.messaggioDove === "csv" && stato.messaggio ? " " + esc(stato.messaggio) : ""
       }</p>
 
       <div class="field">
@@ -563,6 +621,18 @@ function htmlRubrica() {
       <div class="rubrica-actions">
         <button class="btn btn-secondary" type="button" id="salva-sedi">Salva sedi</button>
       </div>
+      ${nota("sedi")}
+
+      <div class="field">
+        <label for="vettori">Vettori (uno per riga)</label>
+        <textarea class="input sedi-input" id="vettori">${esc(stato.vettoriTesto)}</textarea>
+      </div>
+      <div class="rubrica-actions">
+        <button class="btn btn-secondary" type="button" id="salva-vettori">Salva vettori</button>
+      </div>
+      ${nota("vettori")}
+      <p class="note text-muted">L'ordine è quello dei pulsanti nelle altre schermate. Le spedizioni
+      già registrate tengono il vettore con cui sono nate, anche se qui lo togli.</p>
     </div>
     <div class="rubrica-list">
       <h6 class="text-muted" style="margin:0">${stato.totaleClienti} clienti in anagrafica</h6>
@@ -620,7 +690,8 @@ function vaiA(tab) {
   stato.tab = tab;
   if (location.hash !== "#" + tab) history.replaceState(null, "", "#" + tab);
   render();
-  if (tab === "bordero" && !stato.bAperto) caricaGiornata();
+  // Anche con un borderò aperto: nel frattempo possono essere nate altre spedizioni.
+  if (tab === "bordero") caricaGiornata();
 }
 
 async function caricaGiornata() {
@@ -629,7 +700,8 @@ async function caricaGiornata() {
       `/api/spedizioni?giorno=${encodeURIComponent(stato.bGiorno)}&vettore=${encodeURIComponent(stato.bVettore)}`
     );
     stato.bSpedizioni = r.spedizioni;
-    stato.bSel = r.spedizioni.filter((s) => !s.bordero).map((s) => s.codice);
+    // Con un borderò aperto la spunta parte vuota: si aggiunge solo quello che si sceglie.
+    stato.bSel = stato.bAperto ? [] : r.spedizioni.filter((s) => !s.bordero).map((s) => s.codice);
     render();
   } catch (err) {
     console.error(err);
@@ -695,6 +767,7 @@ view.addEventListener("click", async (e) => {
   if (bVettore) {
     stato.bVettore = bVettore.dataset.bvettore;
     stato.bAperto = null;
+    stato.bNota = null;
     render();
     return caricaGiornata();
   }
@@ -707,12 +780,14 @@ view.addEventListener("click", async (e) => {
   }
 
   if (t.closest("#genera-bordero")) return generaBordero();
+  if (t.closest("#aggiungi-bordero")) return aggiungiAlBordero();
   if (t.closest("#stampa-bordero")) {
     setTimeout(() => (window.stampaLocale || window.print)(), 60);
     return;
   }
   if (t.closest("#nuovo-bordero")) {
     stato.bAperto = null;
+    stato.bNota = null;
     render();
     return caricaGiornata();
   }
@@ -722,11 +797,13 @@ view.addEventListener("click", async (e) => {
     try {
       const b = await api("/api/bordero?numero=" + encodeURIComponent(apri.dataset.apri));
       stato.bAperto = b;
+      stato.bNota = null;
       stato.bGiorno = b.giorno;
       stato.bVettore = b.vettore;
       stato.bSpedizioni = b.righe;
-      stato.bSel = b.righe.map((r) => r.codice);
+      stato.bSel = [];
       render();
+      await caricaGiornata();
     } catch (err) {
       alert("Impossibile aprire il borderò: " + err.message);
     }
@@ -781,29 +858,15 @@ view.addEventListener("click", async (e) => {
       stato.sel = null;
       applicaStato(r.stato);
       stato.csv = "";
-      stato.messaggio = `Importati ${r.importati} clienti.`;
+      segnala("csv", `Importati ${r.importati} clienti.`);
     } catch (err) {
-      stato.messaggio = "Importazione fallita: " + err.message;
+      segnala("csv", "Importazione fallita: " + err.message);
     }
     return render();
   }
 
-  if (t.closest("#salva-sedi")) {
-    try {
-      const r = await api("/api/sedi", {
-        method: "POST",
-        body: JSON.stringify({ sedi: stato.sediTesto.split("\n") }),
-      });
-      const cerca = stato.cerca;
-      applicaStato(r.stato);
-      stato.cerca = cerca;
-      stato.messaggio = "Sedi aggiornate.";
-      ricercaDifferita();
-    } catch (err) {
-      stato.messaggio = "Salvataggio sedi fallito: " + err.message;
-    }
-    return render();
-  }
+  if (t.closest("#salva-sedi")) return salvaElenco("sedi", stato.sediTesto);
+  if (t.closest("#salva-vettori")) return salvaElenco("vettori", stato.vettoriTesto);
 });
 
 view.addEventListener("input", (e) => {
@@ -818,6 +881,7 @@ view.addEventListener("input", (e) => {
     return;
   }
   if (e.target.id === "sedi") stato.sediTesto = e.target.value;
+  if (e.target.id === "vettori") stato.vettoriTesto = e.target.value;
 });
 
 view.addEventListener("change", async (e) => {
@@ -832,9 +896,11 @@ view.addEventListener("change", async (e) => {
     }
     return;
   }
-  if (e.target.id === "giorno") {
+  if (e.target.id === "giorno" || e.target.id === "giornata") {
+    if (!e.target.value) return;
     stato.bGiorno = e.target.value;
     stato.bAperto = null;
+    stato.bNota = null;
     render();
     return caricaGiornata();
   }
@@ -851,6 +917,25 @@ view.addEventListener("change", async (e) => {
 });
 
 /* — azioni — */
+
+/** Salva l'elenco di sedi o vettori scritto nella schermata Anagrafica. */
+async function salvaElenco(campo, testo) {
+  const fatto = campo === "sedi" ? "Sedi aggiornate." : "Vettori aggiornati.";
+  try {
+    const r = await api("/api/" + campo, {
+      method: "POST",
+      body: JSON.stringify({ [campo]: testo.split("\n") }),
+    });
+    const cerca = stato.cerca;
+    applicaStato(r.stato);
+    stato.cerca = cerca;
+    segnala(campo, fatto);
+    ricercaDifferita();
+  } catch (err) {
+    segnala(campo, "Salvataggio fallito: " + err.message);
+  }
+  render();
+}
 
 /** Riporta nel modulo una spedizione dello storico, per ristamparla o correggerla. */
 async function apriNelModulo(codiceSpedizione, modo) {
@@ -914,7 +999,7 @@ async function salvaModifica(poiStampa) {
       render();
       return setTimeout(() => (window.stampaLocale || window.print)(), 60);
     }
-    stato.messaggio = `Spedizione ${codice} aggiornata.`;
+    segnala("storico", `Spedizione ${codice} aggiornata.`);
     vaiA("storico");
   } catch (err) {
     alert("Impossibile salvare le modifiche: " + err.message);
@@ -937,7 +1022,7 @@ async function eliminaSpedizione(codice) {
     stato.cerca = cerca;
     if (stato.modifica && stato.modifica.codice === codice) stato.modifica = null;
     if (stato.ristampa && stato.ristampa.codice === codice) stato.ristampa = null;
-    stato.messaggio = `Spedizione ${codice} eliminata.`;
+    segnala("storico", `Spedizione ${codice} eliminata.`);
     render();
   } catch (err) {
     alert("Impossibile eliminare la spedizione: " + err.message);
@@ -956,14 +1041,38 @@ async function generaBordero() {
       }),
     });
     stato.bAperto = r.bordero;
-    stato.bSpedizioni = r.bordero.righe;
-    stato.bSel = r.bordero.righe.map((x) => x.codice);
+    stato.bNota = null;
+    stato.bSel = [];
     stato.bordero = r.stato.bordero;
     stato.storico = r.stato.storico;
-    render();
+    stato.giornate = r.stato.giornate || stato.giornate;
+    await caricaGiornata();
     setTimeout(() => (window.stampaLocale || window.print)(), 60);
   } catch (err) {
     alert("Impossibile generare il borderò: " + err.message);
+  }
+}
+
+/** Aggiunge al borderò aperto le spedizioni spuntate: il documento va ristampato. */
+async function aggiungiAlBordero() {
+  if (!stato.bAperto || !stato.bSel.length) return;
+  const quante = stato.bSel.length;
+  try {
+    const r = await api("/api/bordero/" + encodeURIComponent(stato.bAperto.numero), {
+      method: "POST",
+      body: JSON.stringify({ codici: stato.bSel }),
+    });
+    stato.bAperto = r.bordero;
+    stato.bSel = [];
+    stato.bordero = r.stato.bordero;
+    stato.storico = r.stato.storico;
+    stato.giornate = r.stato.giornate || stato.giornate;
+    stato.bNota = `${quante} ${quante === 1 ? "spedizione aggiunta" : "spedizioni aggiunte"} a ${
+      r.bordero.numero
+    }: ristampa il borderò e sostituisci la copia dell'autista.`;
+    await caricaGiornata();
+  } catch (err) {
+    alert("Impossibile aggiungere le spedizioni: " + err.message);
   }
 }
 

@@ -97,6 +97,20 @@
     return { ...b, righe, colli: righe.reduce((n, r) => n + r.colli, 0) };
   }
 
+  /** Le giornate con spedizioni, dalla più recente: alimentano il menu del borderò. */
+  function giornate(limite = 30) {
+    const conteggi = new Map();
+    for (const s of db.spedizioni) {
+      const giorno = giornoLocale(s.data);
+      const g = conteggi.get(giorno) || { giorno, spedizioni: 0, colli: 0, liberi: 0 };
+      g.spedizioni++;
+      g.colli += s.colli;
+      if (!s.bordero) g.liberi++;
+      conteggi.set(giorno, g);
+    }
+    return [...conteggi.values()].sort((a, b) => b.giorno.localeCompare(a.giorno)).slice(0, limite);
+  }
+
   function stato(q) {
     return {
       clienti: cerca(q),
@@ -107,6 +121,7 @@
       vettori: db.vettori,
       storico: db.spedizioni.slice(0, 200),
       bordero: elencoBordero(),
+      giornate: giornate(),
       prossimoCodice: prossimoCodice(),
       oggi: giornoLocale(new Date().toISOString()),
     };
@@ -192,13 +207,14 @@
       return { importati: clienti.length, stato: stato("") };
     }
 
-    if (rotta === "/api/sedi") {
-      const pulite = (corpo.sedi || [])
+    if (rotta === "/api/sedi" || rotta === "/api/vettori") {
+      const campo = rotta === "/api/sedi" ? "sedi" : "vettori";
+      const pulite = (corpo[campo] || [])
         .map((s) => String(s).trim())
         .filter(Boolean)
         .filter((s, i, a) => a.indexOf(s) === i);
-      if (!pulite.length) throw new Error("Serve almeno una sede");
-      db.sedi = pulite;
+      if (!pulite.length) throw new Error(campo === "sedi" ? "Serve almeno una sede" : "Serve almeno un vettore");
+      db[campo] = pulite;
       salva();
       return { stato: stato("") };
     }
@@ -227,6 +243,25 @@
       const b = borderoDettaglio(numero);
       if (!b) throw new Error("borderò inesistente");
       return b;
+    }
+
+    if (rotta.startsWith("/api/bordero/") && metodo === "POST") {
+      const numero = decodeURIComponent(rotta.slice("/api/bordero/".length));
+      const b = db.bordero.find((x) => x.numero === numero);
+      if (!b) throw new Error("borderò inesistente");
+      const codici = (corpo.codici || []).map(String);
+      const righe = codici.map((c) => db.spedizioni.find((s) => s.codice === c));
+      if (righe.some((r) => !r)) throw new Error("spedizione inesistente");
+      for (const r of righe) {
+        if (r.bordero) throw new Error("La spedizione " + r.codice + " è già nel borderò " + r.bordero + ".");
+        if (giornoLocale(r.data) !== b.giorno)
+          throw new Error("La spedizione " + r.codice + " non è della giornata del borderò.");
+        if (r.vettore !== b.vettore)
+          throw new Error("La spedizione " + r.codice + " è di un altro vettore (" + r.vettore + ").");
+      }
+      righe.forEach((r) => (r.bordero = numero));
+      salva();
+      return { bordero: borderoDettaglio(numero), stato: stato("") };
     }
 
     if (rotta === "/api/bordero" && metodo === "POST") {

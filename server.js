@@ -209,11 +209,12 @@ const importaClienti = (clienti) =>
     for (const c of clienti) ins.run(c.codice, c.ragione_sociale, c.indirizzo, c.cap_citta, c.piva);
   });
 
-const salvaSedi = (sedi) =>
+/** Sostituisce un elenco di nomi ordinati (sedi o vettori). */
+const salvaElenco = (tabella, valori) =>
   inTransazione(() => {
-    db.prepare("DELETE FROM sedi").run();
-    const ins = db.prepare("INSERT INTO sedi (nome, ordine) VALUES (?, ?)");
-    sedi.forEach((nome, i) => ins.run(nome, i));
+    db.prepare(`DELETE FROM ${tabella}`).run();
+    const ins = db.prepare(`INSERT INTO ${tabella} (nome, ordine) VALUES (?, ?)`);
+    valori.forEach((nome, i) => ins.run(nome, i));
   });
 
 /** Avanza il contatore annuale del tipo indicato. Da usare dentro una transazione. */
@@ -304,6 +305,29 @@ const creaBordero = (b) =>
     return numero;
   });
 
+/** Aggiunge spedizioni a un borderò già emesso: devono essere della stessa giornata
+    e dello stesso vettore, e non appartenere già a un altro borderò. */
+const aggiungiAlBordero = (numero, codici) =>
+  inTransazione(() => {
+    const b = db.prepare("SELECT numero, giorno, vettore FROM bordero WHERE numero = ?").get(numero);
+    if (!b) throw new ErroreHttp(404, "borderò inesistente");
+    const posti = codici.map(() => "?").join(",");
+    const righe = db
+      .prepare(`SELECT codice, creato_at, vettore, bordero FROM spedizioni WHERE codice IN (${posti})`)
+      .all(...codici);
+    if (righe.length !== codici.length) throw new ErroreHttp(404, "spedizione inesistente");
+    for (const r of righe) {
+      if (r.bordero) throw new ErroreHttp(409, `La spedizione ${r.codice} è già nel borderò ${r.bordero}.`);
+      if (giornoLocale(r.creato_at) !== b.giorno)
+        throw new ErroreHttp(409, `La spedizione ${r.codice} non è della giornata del borderò.`);
+      if (r.vettore !== b.vettore)
+        throw new ErroreHttp(409, `La spedizione ${r.codice} è di un altro vettore (${r.vettore}).`);
+    }
+    const marca = db.prepare("UPDATE spedizioni SET bordero = ? WHERE codice = ?");
+    for (const r of righe) marca.run(numero, r.codice);
+    return righe.length;
+  });
+
 /* — letture — */
 
 const codiceDa = (anno, seq) => "SI-" + anno + "-" + String(seq).padStart(4, "0");
@@ -382,6 +406,20 @@ function elencoBordero() {
     }));
 }
 
+/** Le giornate con spedizioni, dalla più recente: alimentano il menu del borderò. */
+function giornate(limite = 30) {
+  const conteggi = new Map();
+  for (const r of db.prepare("SELECT creato_at, colli, bordero FROM spedizioni").all()) {
+    const giorno = giornoLocale(r.creato_at);
+    const g = conteggi.get(giorno) || { giorno, spedizioni: 0, colli: 0, liberi: 0 };
+    g.spedizioni++;
+    g.colli += r.colli;
+    if (!r.bordero) g.liberi++;
+    conteggi.set(giorno, g);
+  }
+  return [...conteggi.values()].sort((a, b) => b.giorno.localeCompare(a.giorno)).slice(0, limite);
+}
+
 const LIMITE_RICERCA = 50;
 
 function cercaClienti(q) {
@@ -420,12 +458,18 @@ function stato(q) {
     vettori: db.prepare("SELECT nome FROM vettori ORDER BY ordine, id").all().map((r) => r.nome),
     storico: db.prepare(`${RIGA_SPEDIZIONE} ORDER BY id DESC LIMIT 200`).all().map(mappaSpedizione),
     bordero: elencoBordero(),
+    giornate: giornate(),
     prossimoCodice: prossimoCodice(),
     oggi: giornoLocale(new Date().toISOString()),
   };
 }
 
 /* — HTTP — */
+
+const ELENCHI = {
+  "/api/sedi": { tabella: "sedi", campo: "sedi", errore: "Serve almeno una sede" },
+  "/api/vettori": { tabella: "vettori", campo: "vettori", errore: "Serve almeno un vettore" },
+};
 
 function leggiCorpo(req, limite = 20 * 1024 * 1024) {
   return new Promise((risolvi, rifiuta) => {
@@ -488,14 +532,15 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { importati: clienti.length, stato: stato("") });
     }
 
-    if (url.pathname === "/api/sedi" && req.method === "POST") {
-      const { sedi } = JSON.parse((await leggiCorpo(req)) || "{}");
-      const pulite = (Array.isArray(sedi) ? sedi : [])
+    if (ELENCHI[url.pathname] && req.method === "POST") {
+      const { tabella, campo, errore } = ELENCHI[url.pathname];
+      const corpo = JSON.parse((await leggiCorpo(req)) || "{}");
+      const pulite = (Array.isArray(corpo[campo]) ? corpo[campo] : [])
         .map((s) => String(s).trim())
         .filter(Boolean)
         .filter((s, i, a) => a.indexOf(s) === i);
-      if (!pulite.length) return json(res, 400, { errore: "Serve almeno una sede" });
-      salvaSedi(pulite);
+      if (!pulite.length) return json(res, 400, { errore });
+      salvaElenco(tabella, pulite);
       return json(res, 200, { stato: stato("") });
     }
 
@@ -566,6 +611,19 @@ const server = http.createServer(async (req, res) => {
         return b ? json(res, 200, b) : json(res, 404, { errore: "borderò inesistente" });
       }
       return json(res, 200, { bordero: elencoBordero() });
+    }
+
+    if (url.pathname.startsWith("/api/bordero/") && req.method === "POST") {
+      const numero = decodeURIComponent(url.pathname.slice("/api/bordero/".length));
+      const b = JSON.parse((await leggiCorpo(req)) || "{}");
+      const codici = (Array.isArray(b.codici) ? b.codici : []).map(String).filter(Boolean);
+      if (!codici.length) return json(res, 400, { errore: "Nessuna spedizione selezionata" });
+      try {
+        aggiungiAlBordero(numero, codici);
+      } catch (e) {
+        return json(res, e.stato || 400, { errore: e.message });
+      }
+      return json(res, 200, { bordero: borderoDettaglio(numero), stato: stato("") });
     }
 
     if (url.pathname === "/api/bordero" && req.method === "POST") {

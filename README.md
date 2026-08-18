@@ -45,16 +45,24 @@ node demo/build.mjs [percorso/anagrafica.csv]
 - **Nuova etichetta** — vettore, sede di partenza, destinatario dalla rubrica (con ricerca),
   numero colli, anteprima del foglio A4 e stampa.
 - **Borderò** — la distinta per l'autista: scegli vettore e giornata, spunta le spedizioni create e
-  stampa. Ogni borderò riceve un numero `BO-<anno>-<progressivo>`; una spedizione già inserita in un
-  borderò non può finire in un secondo (resta in elenco, barrata, con il numero a cui appartiene).
-  Il documento si impagina da solo su più fogli A4 e l'ultima pagina porta totali e firme.
+  stampa. La giornata si sceglie dal menu dei giorni che hanno spedizioni (con quante e quante sono
+  ancora da assegnare), oppure dal campo data accanto per una data qualsiasi. Ogni borderò riceve un
+  numero `BO-<anno>-<progressivo>`; una spedizione già inserita in un borderò non può finire in un
+  secondo (resta in elenco, barrata, con il numero a cui appartiene). Il documento si impagina da
+  solo su più fogli A4 e l'ultima pagina porta totali e firme. Un borderò già stampato si riapre da
+  «Borderò recenti» e accetta altre spedizioni **della stessa giornata e dello stesso vettore**: si
+  spuntano quelle ancora libere e si preme `Aggiungi al borderò`, poi lo si ristampa per sostituire
+  la copia dell'autista.
 - **Storico** — tutte le spedizioni registrate, con il borderò di appartenenza; `Ristampa` riapre i
   dati nel modulo mantenendo il codice originale, senza consumare un nuovo numero. `Modifica`
   corregge vettore, sede di partenza, destinatario e colli di una spedizione già stampata (codice e
   data restano quelli originali), `Elimina` la cancella — il codice però non viene riutilizzato. Le
   due azioni restano disponibili finché la spedizione non entra in un borderò: da quel momento sono
   disattivate, perché il documento è già in mano all'autista.
-- **Rubrica** — importazione dei destinatari da CSV (incolla il testo oppure apri un file).
+- **Anagrafica** — importazione dei destinatari da CSV (incolla il testo oppure apri un file) e i due
+  elenchi dell'applicazione, uno per riga: le **sedi di partenza** e i **vettori**. L'ordine delle
+  righe è quello dei pulsanti nelle altre schermate; le spedizioni già registrate tengono il vettore
+  con cui sono nate, anche se lo togli dall'elenco.
 
 ## Stampa
 
@@ -84,8 +92,8 @@ sociale, indirizzo e città. L'importazione **sostituisce** l'anagrafica corrent
 
 Dal gestionale esporta in CSV; se hai un file Excel, in Excel usa *Salva con nome → CSV UTF-8*.
 
-Le sedi di partenza non arrivano dall'anagrafica: si gestiscono nella pagina Anagrafica, una per
-riga.
+Le sedi di partenza e i vettori non arrivano dal CSV: si scrivono nella pagina Anagrafica, uno per
+riga, e sostituiscono l'elenco precedente (serve almeno una voce per elenco).
 
 ## Struttura
 
@@ -108,13 +116,15 @@ altrimenti il server.
 
 | Metodo | Percorso          | Descrizione                                                  |
 | ------ | ----------------- | ------------------------------------------------------------ |
-| GET    | `/api/stato`      | anagrafica, sedi, vettori, storico, prossimo codice           |
+| GET    | `/api/stato`      | anagrafica, sedi, vettori, storico, giornate, prossimo codice  |
 | GET    | `/api/clienti?q=` | ricerca clienti (primi 50 per nome, città, indirizzo, codice) |
 | GET    | `/api/spedizioni` | `?giorno=YYYY-MM-DD&vettore=` — spedizioni di una giornata      |
 | GET    | `/api/bordero`    | elenco borderò, oppure `?numero=BO-…` per il dettaglio         |
 | POST   | `/api/bordero`    | `{ codici, vettore, giorno }` — crea il borderò e lo numera     |
+| POST   | `/api/bordero/<numero>` | `{ codici }` — aggiunge spedizioni a un borderò esistente |
 | POST   | `/api/clienti`    | `{ csv }` — sostituisce l'anagrafica                           |
 | POST   | `/api/sedi`       | `{ sedi }` — elenco delle sedi di partenza                     |
+| POST   | `/api/vettori`    | `{ vettori }` — elenco dei vettori                             |
 | POST   | `/api/mittente`   | `{ mittente }` — memorizza la sede di partenza predefinita     |
 | POST   | `/api/spedizioni` | registra la spedizione e assegna il codice progressivo        |
 | PUT    | `/api/spedizioni/<codice>` | corregge una spedizione (409 se è già in un borderò) |
@@ -122,8 +132,8 @@ altrimenti il server.
 
 ## Da definire
 
-- **Vettori**: i quattro nomi nella tabella `vettori` sono ancora quelli di esempio del prototipo,
-  come gli eventuali dati che ciascun vettore richiede in etichetta (numero conto, formato del
-  codice, barcode).
-- **Sedi di partenza**: da inserire nella pagina Anagrafica (il database parte con una sola voce,
-  «Sede principale»).
+- **Vettori e sedi**: si scrivono nella pagina Anagrafica. Il database parte con i quattro nomi di
+  esempio del prototipo e con una sola sede, «Sede principale»: vanno sostituiti con quelli veri al
+  primo avvio.
+- **Dati per vettore**: restano da definire gli eventuali dati che ciascun vettore richiede in
+  etichetta (numero conto, formato del codice, barcode).
