@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/nocturne-61dfbe4f-362b-450e-b843-64b0f7d1471b/styles.css">
+<script src="_ds/nocturne-61dfbe4f-362b-450e-b843-64b0f7d1471b/_ds_bundle.js"></script>
+<style>
+body{margin:0}
+select.input{appearance:none}
+@media print{
+  body *{visibility:hidden}
+  .print-area,.print-area *{visibility:visible}
+  .print-scale{transform:none !important;height:auto !important;width:auto !important}
+  .print-area{position:absolute;left:0;top:0;gap:0 !important}
+  .sheet{box-shadow:none !important;break-after:page}
+  @page{size:A4;margin:0}
+}
+</style>
+</helmet>
+<div style="min-height:100vh;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body)">
+
+  <div class="nav" style="padding:14px 32px;gap:26px;position:sticky;top:0;background:var(--color-bg);z-index:5">
+    <div class="nav-brand" style="display:flex;align-items:center;gap:10px;margin-right:28px">
+      <span style="width:26px;height:26px;border-radius:var(--radius-sm);border:1px solid var(--color-accent);color:var(--color-accent);display:grid;place-items:center;font-size:11px">ET</span>
+      <span>Etichette di spedizione</span>
+    </div>
+    <a href="#" onClick="{{ nav.nuova }}" aria-current="{{ cur.nuova }}">Nuova etichetta</a>
+    <a href="#" onClick="{{ nav.storico }}" aria-current="{{ cur.storico }}">Storico</a>
+    <a href="#" onClick="{{ nav.rubrica }}" aria-current="{{ cur.rubrica }}">Rubrica</a>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:10px;font-size:12px" class="text-muted">
+      <span style="width:6px;height:6px;border-radius:50%;background:var(--color-accent)"></span>
+      <span>A4 adesivo · 2 etichette</span>
+    </div>
+  </div>
+
+  <sc-if value="{{ isNuova }}" hint-placeholder-val="{{ true }}">
+  <div style="display:grid;grid-template-columns:minmax(320px,400px) minmax(0,auto);gap:48px;padding:28px 32px 64px;align-items:start">
+    <div style="display:flex;flex-direction:column;gap:24px;min-width:0">
+      <div>
+        <h2 style="margin:0 0 4px">Nuova etichetta</h2>
+        <p class="text-muted" style="font-size:13px;margin:0">Una etichetta per collo. Il numero progressivo è assegnato alla stampa.</p>
+      </div>
+
+      <div class="field">
+        <label>Vettore</label>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          <sc-for list="{{ vettori }}" as="v" hint-placeholder-count="4">
+            <button style="{{ v.style }}" onClick="{{ v.pick }}">{{ v.nome }}</button>
+          </sc-for>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Sede di partenza</label>
+        <select class="input" value="{{ mittente }}" onChange="{{ on.mittente }}">
+          <sc-for list="{{ sedi }}" as="s" hint-placeholder-count="4">
+            <option value="{{ s }}">{{ s }}</option>
+          </sc-for>
+        </select>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px">
+          <h6 style="margin:0;color:var(--color-accent)">Destinatario</h6>
+          <span style="font-size:12px" class="text-muted">{{ contattiNota }}</span>
+        </div>
+        <input class="input" ref="{{ cercaRef }}" onChange="{{ on.cerca }}" onInput="{{ on.cerca }}" placeholder="Cerca nella rubrica…">
+        <div style="display:flex;flex-direction:column;max-height:300px;overflow:auto;border:1px solid var(--color-divider);border-radius:var(--radius-md)">
+          <sc-for list="{{ contatti }}" as="c" hint-placeholder-count="5">
+            <button style="{{ c.rowStyle }}" onClick="{{ c.pick }}">
+              <span style="display:flex;flex-direction:column;gap:1px;text-align:left;min-width:0">
+                <span style="font-size:14px;font-weight:500">{{ c.nome }}</span>
+                <span style="font-size:12px;opacity:0.6">{{ c.sede }}</span>
+              </span>
+              <span style="font-size:11px;color:var(--color-accent);letter-spacing:0.08em">{{ c.mark }}</span>
+            </button>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;border-radius:var(--radius-md);background:var(--color-surface)">
+        <span style="font-size:13px">Numero colli</span>
+        <div style="display:flex;align-items:center;gap:10px">
+          <button class="btn btn-secondary btn-icon" onClick="{{ meno }}">−</button>
+          <span style="font-size:15px;min-width:16px;text-align:center">{{ colli }}</span>
+          <button class="btn btn-secondary btn-icon" onClick="{{ piu }}">+</button>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <p class="text-muted" style="font-size:12px;margin:0">{{ fogliNota }}</p>
+        <button class="btn btn-primary btn-block" style="min-height:40px" onClick="{{ stampa }}">Stampa</button>
+        <button class="btn btn-secondary btn-block" onClick="{{ salva }}">Salva senza stampare</button>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:24px">
+        <h6 style="margin:0" class="text-muted">Anteprima foglio A4</h6>
+        <span style="font-size:12px" class="text-muted">{{ codice }}</span>
+      </div>
+      <div class="print-scale" style="transform:scale(0.55);transform-origin:top left;height:{{ scaledH }};width:440px">
+        <div class="print-area" style="display:flex;flex-direction:column;gap:18px">
+          <sc-for list="{{ sheets }}" as="sh" hint-placeholder-count="1">
+            <div class="sheet" style="width:210mm;height:297mm;background:#ffffff;color:#17181f;display:flex;flex-direction:column;box-shadow:var(--shadow-md)">
+              <sc-for list="{{ sh.slots }}" as="sl" hint-placeholder-count="2">
+                <div style="height:148.5mm;padding:14mm 16mm;display:flex;flex-direction:column;border-bottom:1px dashed rgba(23,24,31,0.35)">
+                  <sc-if value="{{ sl.filled }}" hint-placeholder-val="{{ true }}">
+                    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8mm;border-bottom:1px solid #17181f;padding-bottom:3mm">
+                      <div>
+                        <div style="font-size:10px;letter-spacing:0.18em;text-transform:uppercase;opacity:0.55">Vettore</div>
+                        <div style="font-size:20px;font-weight:600;letter-spacing:-0.01em;margin-top:1mm">{{ sl.vettore }}</div>
+                      </div>
+                      <span style="font-size:15px;font-weight:600;letter-spacing:0.1em;font-variant-numeric:tabular-nums">{{ sl.codice }}</span>
+                    </div>
+                    <div style="margin-top:14mm">
+                      <div style="font-size:10px;letter-spacing:0.18em;text-transform:uppercase;opacity:0.55">Destinatario</div>
+                      <div style="font-size:40px;font-weight:600;line-height:1.05;letter-spacing:-0.025em;margin-top:2mm">{{ sl.nome }}</div>
+                      <div style="font-size:22px;font-weight:400;margin-top:3mm">{{ sl.sede }}</div>
+                    </div>
+                    <div style="margin-top:auto;display:flex;justify-content:space-between;align-items:flex-end;gap:8mm;border-top:1px solid #17181f;padding-top:3mm">
+                      <span style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;opacity:0.55">{{ sl.mittente }}</span>
+                      <span style="font-size:15px;font-weight:600;font-variant-numeric:tabular-nums">{{ sl.collo }}</span>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ sl.empty }}" hint-placeholder-val="{{ false }}">
+                    <div style="flex:1;display:grid;place-items:center;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:rgba(23,24,31,0.3)">Slot libero</div>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ isStorico }}" hint-placeholder-val="{{ false }}">
+  <div style="padding:28px 32px 64px;max-width:900px">
+    <h2 style="margin:0 0 4px">Storico</h2>
+    <p class="text-muted" style="font-size:13px;margin:0 0 24px">Ristampa riapre i dati nel modulo.</p>
+    <table class="table">
+      <thead><tr><th>Codice</th><th>Data</th><th>Vettore</th><th>Destinatario</th><th>Sede</th><th>Colli</th><th></th></tr></thead>
+      <tbody>
+        <sc-for list="{{ storico }}" as="r" hint-placeholder-count="5">
+          <tr>
+            <td style="font-variant-numeric:tabular-nums">{{ r.codice }}</td>
+            <td class="text-muted">{{ r.data }}</td>
+            <td><span class="tag tag-neutral">{{ r.vettore }}</span></td>
+            <td>{{ r.nome }}</td>
+            <td class="text-muted">{{ r.sede }}</td>
+            <td>{{ r.colli }}</td>
+            <td style="text-align:right"><button class="btn btn-ghost" onClick="{{ r.ristampa }}">Ristampa</button></td>
+          </tr>
+        </sc-for>
+      </tbody>
+    </table>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ isRubrica }}" hint-placeholder-val="{{ false }}">
+  <div style="display:grid;grid-template-columns:minmax(320px,420px) minmax(0,1fr);gap:48px;padding:28px 32px 64px;max-width:1100px;align-items:start">
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div>
+        <h2 style="margin:0 0 4px">Rubrica</h2>
+        <p class="text-muted" style="font-size:13px;margin:0">Importa da CSV: una riga per destinatario — nome, sede.</p>
+      </div>
+      <div class="field">
+        <label>CSV</label>
+        <textarea class="input" style="min-height:200px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px" ref="{{ csvRef }}" onChange="{{ on.csv }}" placeholder="Mario Rossi;Stabilimento Melzo"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" onClick="{{ importa }}">Importa {{ importNota }}</button>
+        <button class="btn btn-secondary" onClick="{{ esempio }}">Carica esempio</button>
+      </div>
+      <p class="text-muted" style="font-size:12px;margin:0">L'importazione sostituisce la rubrica corrente. Le sedi trovate nel file diventano anche le sedi selezionabili come mittente.</p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px;min-width:0">
+      <h6 style="margin:0" class="text-muted">{{ contattiNota }}</h6>
+      <table class="table">
+        <thead><tr><th>Destinatario</th><th>Sede</th><th></th></tr></thead>
+        <tbody>
+          <sc-for list="{{ rubrica }}" as="c" hint-placeholder-count="6">
+            <tr>
+              <td>{{ c.nome }}</td>
+              <td class="text-muted">{{ c.sede }}</td>
+              <td style="text-align:right"><button class="btn btn-ghost" onClick="{{ c.pickAndGo }}">Usa</button></td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;maxColli&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:20,&quot;min&quot;:1,&quot;max&quot;:99,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Comportamento&quot;}}">
+const CSV_ESEMPIO = [
+  "Mario Rossi;Stabilimento Melzo",
+  "Laura Riva;Stabilimento Melzo",
+  "Silvia Conti;Deposito Pioltello",
+  "Andrea Neri;Uffici Bologna",
+  "Marco Ferrara;Sede Milano",
+  "Chiara Bianchi;Uffici Bologna",
+  "Paolo Greco;Deposito Pioltello",
+  "Elena Sarti;Sede Milano"
+].join("\n");
+
+function parseRubrica(text) {
+  return String(text || "").split("\n").map(l => l.trim()).filter(Boolean).map(l => {
+    const p = l.split(/[;,\t]/).map(x => x.trim());
+    return { nome: p[0] || "—", sede: p[1] || "—" };
+  });
+}
+
+function chunk2(items) {
+  const out = [];
+  for (let i = 0; i < items.length; i += 2) {
+    const slots = [items[i], items[i + 1] || null].map(it =>
+      it ? Object.assign({ filled: true, empty: false }, it) : { filled: false, empty: true });
+    out.push({ slots: slots });
+  }
+  return out.length ? out : [{ slots: [{ filled: false, empty: true }, { filled: false, empty: true }] }];
+}
+
+const OGGI = "18/08/2026";
+
+const VETTORI = ["Trasporti Bianchi", "Corriere Alpi", "Logistica Padana", "Ritiro in sede"];
+
+class Component extends DCLogic {
+  state = {
+    tab: "nuova",
+    colli: 1,
+    seq: 148,
+    cerca: "",
+    rubrica: parseRubrica(CSV_ESEMPIO),
+    sel: 0,
+    mittente: "Sede Milano",
+    vettore: VETTORI[0],
+    csv: CSV_ESEMPIO,
+    storico: [
+      { codice: "SI-2026-0147", data: "18/08 09:12", vettore: "Trasporti Bianchi", nome: "Laura Riva", sede: "Stabilimento Melzo", colli: 2 },
+      { codice: "SI-2026-0146", data: "18/08 08:40", vettore: "Corriere Alpi", nome: "Andrea Neri", sede: "Uffici Bologna", colli: 1 },
+      { codice: "SI-2026-0145", data: "17/08 16:55", vettore: "Trasporti Bianchi", nome: "Silvia Conti", sede: "Deposito Pioltello", colli: 4 },
+      { codice: "SI-2026-0144", data: "17/08 15:20", vettore: "Logistica Padana", nome: "Elena Sarti", sede: "Sede Milano", colli: 1 },
+      { codice: "SI-2026-0143", data: "17/08 11:03", vettore: "Corriere Alpi", nome: "Mario Rossi", sede: "Stabilimento Melzo", colli: 2 }
+    ]
+  };
+
+  csvRef = React.createRef();
+  cercaRef = React.createRef();
+
+  componentDidMount() { this.syncFields(); }
+  componentDidUpdate() { this.syncFields(); }
+  syncFields() {
+    const t = this.csvRef.current;
+    if (t && t.value !== this.state.csv) t.value = this.state.csv;
+    const c = this.cercaRef.current;
+    if (c && c.value !== this.state.cerca) c.value = this.state.cerca;
+  }
+
+  go(tab) { return e => { if (e && e.preventDefault) e.preventDefault(); this.setState({ tab: tab }); }; }
+  code(n) { return "SI-2026-" + String(n).padStart(4, "0"); }
+
+  renderVals() {
+    const st = this.state;
+    const q = st.cerca.trim().toLowerCase();
+    const sel = st.rubrica[st.sel] || { nome: "—", sede: "—" };
+    const codice = this.code(st.seq + 1);
+
+    const labels = [];
+    for (let i = 0; i < st.colli; i++) {
+      labels.push({ nome: sel.nome, sede: sel.sede, codice: codice, vettore: st.vettore, mittente: "Da: " + st.mittente + " · " + OGGI, collo: (i + 1) + " / " + st.colli });
+    }
+    const sheets = chunk2(labels);
+
+    const sedi = st.rubrica.map(c => c.sede).filter((s, i, a) => a.indexOf(s) === i);
+    if (sedi.indexOf(st.mittente) === -1) sedi.unshift(st.mittente);
+
+    const filtrati = st.rubrica
+      .map((c, i) => ({ c: c, i: i }))
+      .filter(x => !q || (x.c.nome + " " + x.c.sede).toLowerCase().indexOf(q) !== -1);
+
+    const rowBase = "display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px;background:transparent;border:0;border-bottom:1px solid var(--color-divider);color:var(--color-text);font:inherit;cursor:pointer;text-align:left;";
+
+    return {
+      isNuova: st.tab === "nuova", isStorico: st.tab === "storico", isRubrica: st.tab === "rubrica",
+      nav: { nuova: this.go("nuova"), storico: this.go("storico"), rubrica: this.go("rubrica") },
+      cur: {
+        nuova: st.tab === "nuova" ? "page" : undefined,
+        storico: st.tab === "storico" ? "page" : undefined,
+        rubrica: st.tab === "rubrica" ? "page" : undefined
+      },
+      mittente: st.mittente,
+      sedi: sedi,
+      vettori: VETTORI.map(v => ({
+        nome: v,
+        style: "font:inherit;font-size:13px;padding:6px 12px;border-radius:var(--radius-md);cursor:pointer;background:transparent;" +
+          (v === st.vettore
+            ? "border:1px solid var(--color-accent);color:var(--color-accent);"
+            : "border:1px solid var(--color-divider);color:var(--color-text);"),
+        pick: () => this.setState({ vettore: v })
+      })),
+      on: {
+        mittente: e => this.setState({ mittente: e.target.value }),
+        cerca: e => this.setState({ cerca: e.target.value }),
+        csv: e => this.setState({ csv: e.target.value })
+      },
+      csvRef: this.csvRef,
+      cercaRef: this.cercaRef,
+      contatti: filtrati.map(x => ({
+        nome: x.c.nome, sede: x.c.sede,
+        mark: x.i === st.sel ? "SELEZIONATO" : "",
+        rowStyle: rowBase + (x.i === st.sel ? "box-shadow:inset 2px 0 0 var(--color-accent);background:var(--color-accent-900);" : ""),
+        pick: () => this.setState({ sel: x.i })
+      })),
+      contattiNota: st.rubrica.length + " destinatari in rubrica",
+      colli: st.colli,
+      piu: () => this.setState(s => ({ colli: Math.min(this.props.maxColli ?? 20, s.colli + 1) })),
+      meno: () => this.setState(s => ({ colli: Math.max(1, s.colli - 1) })),
+      codice: codice,
+      sheets: sheets,
+      scaledH: Math.round(sheets.length * 297 * 3.7795 * 0.55 + (sheets.length - 1) * 18) + "px",
+      fogliNota: st.colli + (st.colli === 1 ? " etichetta" : " etichette") + " · " + sheets.length + (sheets.length === 1 ? " foglio A4" : " fogli A4"),
+      stampa: () => { setTimeout(() => window.print(), 60); this.setState(s => ({ seq: s.seq + 1 })); },
+      salva: () => this.setState(s => ({
+        seq: s.seq + 1, tab: "storico",
+        storico: [{ codice: this.code(s.seq + 1), data: "18/08 10:24", vettore: s.vettore, nome: sel.nome, sede: sel.sede, colli: s.colli }].concat(s.storico)
+      })),
+      storico: st.storico.map(r => ({
+        codice: r.codice, data: r.data, vettore: r.vettore, nome: r.nome, sede: r.sede, colli: r.colli,
+        ristampa: () => {
+          const i = st.rubrica.findIndex(c => c.nome === r.nome);
+          this.setState({ tab: "nuova", colli: r.colli, sel: i >= 0 ? i : 0, cerca: "", vettore: r.vettore });
+        }
+      })),
+      rubrica: st.rubrica.map((c, i) => ({
+        nome: c.nome, sede: c.sede,
+        pickAndGo: () => this.setState({ tab: "nuova", sel: i, cerca: "" })
+      })),
+      importa: () => this.setState(s => {
+        const r = parseRubrica(s.csv);
+        return { rubrica: r.length ? r : s.rubrica, sel: 0, cerca: "" };
+      }),
+      importNota: "(" + parseRubrica(st.csv).length + " righe)",
+      esempio: () => this.setState({ csv: CSV_ESEMPIO })
+    };
+  }
+}
+</script>
+</body>
+</html>
