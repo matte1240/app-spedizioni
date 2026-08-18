@@ -16,6 +16,20 @@ Nessuna dipendenza da installare: il server usa `node:http` e il modulo SQLite i
 Il database viene creato al primo avvio in `data/etichette.db` (percorso modificabile con
 `DB_PATH`, porta con `PORT`).
 
+### Con Docker
+
+L'immagine viene costruita e pubblicata su GHCR a ogni push su `main`
+(`.github/workflows/docker.yml`, amd64 e arm64):
+
+```bash
+docker run -d --name etichette -p 3000:3000 -v etichette-dati:/data \
+  ghcr.io/matte1240/app-spedizioni:latest
+```
+
+Il database sta nel volume montato su `/data`, quindi sopravvive agli aggiornamenti
+dell'immagine. Per costruirla in locale: `docker build -t etichette . && docker run -p 3000:3000 -v
+etichette-dati:/data etichette`.
+
 ## Ambiente di prova
 
 `demo/etichette-demo.html` è l'applicazione in un unico file, con l'anagrafica incorporata e i dati
