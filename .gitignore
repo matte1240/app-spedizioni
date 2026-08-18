@@ -1,2 +1,5 @@
 data/
 node_modules/
+
+# generato da demo/build.mjs, contiene l'anagrafica clienti
+demo/etichette-demo.html

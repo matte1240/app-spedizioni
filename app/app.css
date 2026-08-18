@@ -85,6 +85,16 @@ select.input { appearance: none; }
 .contact-mark { font-size: 11px; color: var(--color-accent); letter-spacing: 0.08em; }
 .list-empty { padding: 14px 12px; font-size: 13px; }
 
+.scelto {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-900);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+  font-size: 12px;
+}
+.scelto-nome { font-size: 14px; font-weight: 500; }
+
 .colli {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 8px 12px;
@@ -153,7 +163,8 @@ select.input { appearance: none; }
   align-items: start;
 }
 .rubrica-col { display: flex; flex-direction: column; gap: 16px; }
-.csv-input { min-height: 200px; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
+.csv-input { min-height: 160px; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
+.sedi-input { min-height: 96px; font-size: 13px; }
 .rubrica-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .rubrica-list { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 

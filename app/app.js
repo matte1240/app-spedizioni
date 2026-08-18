@@ -1,28 +1,21 @@
-const CSV_ESEMPIO = [
-  "Mario Rossi;Stabilimento Melzo",
-  "Laura Riva;Stabilimento Melzo",
-  "Silvia Conti;Deposito Pioltello",
-  "Andrea Neri;Uffici Bologna",
-  "Marco Ferrara;Sede Milano",
-  "Chiara Bianchi;Uffici Bologna",
-  "Paolo Greco;Deposito Pioltello",
-  "Elena Sarti;Sede Milano",
-].join("\n");
-
 const MAX_COLLI = 20;
+const ATTESA_RICERCA = 180;
 
 const stato = {
   tab: "nuova",
-  clienti: [],
+  risultati: [],
+  totaleClienti: 0,
+  limiteRicerca: 50,
   sedi: [],
   vettori: [],
   storico: [],
   mittente: "",
   vettore: "",
-  sel: null,
+  sel: null, // cliente selezionato (oggetto completo)
   colli: 1,
   cerca: "",
   csv: "",
+  sediTesto: "",
   prossimoCodice: "",
   ristampa: null,
   messaggio: null,
@@ -34,28 +27,29 @@ const esc = (s) =>
 const view = document.getElementById("view");
 
 async function api(path, opzioni) {
-  const res = await fetch(path, {
-    headers: { "content-type": "application/json" },
-    ...opzioni,
-  });
+  // L'ambiente di prova (demo/) sostituisce il backend con uno locale al browser.
+  if (window.apiLocale) return window.apiLocale(path, opzioni);
+  const res = await fetch(path, { headers: { "content-type": "application/json" }, ...opzioni });
   const dati = await res.json();
   if (!res.ok) throw new Error(dati.errore || "errore di rete");
   return dati;
 }
 
 function applicaStato(s) {
-  stato.clienti = s.clienti;
+  stato.risultati = s.clienti;
+  stato.totaleClienti = s.totaleClienti;
+  stato.limiteRicerca = s.limiteRicerca ?? stato.limiteRicerca;
   stato.sedi = s.sedi;
   stato.vettori = s.vettori;
   stato.storico = s.storico;
   stato.mittente = s.mittente;
   stato.prossimoCodice = s.prossimoCodice;
+  stato.sediTesto = s.sedi.join("\n");
   if (!stato.vettore || !s.vettori.includes(stato.vettore)) stato.vettore = s.vettori[0] || "";
-  if (stato.sel != null && !s.clienti.some((c) => c.id === stato.sel)) stato.sel = null;
-  if (stato.sel == null) stato.sel = s.clienti.length ? s.clienti[0].id : null;
+  if (!stato.sel) stato.sel = s.clienti[0] || null;
 }
 
-const clienteSel = () => stato.clienti.find((c) => c.id === stato.sel) || null;
+/* — formattazione — */
 
 function dataBreve(iso) {
   const d = new Date(iso);
@@ -71,12 +65,14 @@ function dataOggi() {
 }
 
 function etichette(codice) {
-  const c = clienteSel();
+  const c = stato.sel;
   const out = [];
   for (let i = 0; i < stato.colli; i++) {
     out.push({
-      nome: c ? c.nome : "—",
-      sede: c ? c.sede : "—",
+      codiceCliente: c ? c.codice : "",
+      nome: c ? c.ragione_sociale : "—",
+      indirizzo: c ? c.indirizzo : "",
+      capCitta: c ? c.cap_citta : "",
       codice,
       vettore: stato.vettore,
       mittente: "Da: " + stato.mittente + " · " + dataOggi(),
@@ -106,9 +102,10 @@ function htmlSlot(l) {
         <span class="label-codice">${esc(l.codice)}</span>
       </div>
       <div class="label-dest">
-        <div class="label-kicker">Destinatario</div>
+        <div class="label-kicker">Destinatario${l.codiceCliente ? " · cliente " + esc(l.codiceCliente) : ""}</div>
         <div class="label-nome">${esc(l.nome)}</div>
-        <div class="label-sede">${esc(l.sede)}</div>
+        <div class="label-sede">${esc(l.indirizzo)}</div>
+        <div class="label-sede">${esc(l.capCitta)}</div>
       </div>
       <div class="label-foot">
         <span class="label-mittente">${esc(l.mittente)}</span>
@@ -135,10 +132,21 @@ function htmlAnteprima() {
     </div>`;
 }
 
+function htmlContatto(c) {
+  const scelto = stato.sel && stato.sel.id === c.id;
+  return `
+    <button class="contact" type="button" data-cliente="${c.id}" aria-selected="${!!scelto}">
+      <span class="contact-text">
+        <span class="contact-name">${esc(c.ragione_sociale)}</span>
+        <span class="contact-sede">${esc([c.indirizzo, c.cap_citta].filter(Boolean).join(" · "))}</span>
+      </span>
+      <span class="contact-mark">${scelto ? "SELEZIONATO" : esc(c.codice)}</span>
+    </button>`;
+}
+
 function htmlNuova() {
-  const q = stato.cerca.trim().toLowerCase();
-  const filtrati = stato.clienti.filter((c) => !q || (c.nome + " " + c.sede).toLowerCase().includes(q));
   const sheets = Math.ceil(stato.colli / 2);
+  const parziale = stato.risultati.length >= stato.limiteRicerca;
   return `
   <div class="nuova">
     <div class="form-col">
@@ -162,34 +170,36 @@ function htmlNuova() {
       <div class="field">
         <label for="mittente">Sede di partenza</label>
         <select class="input" id="mittente">
-          ${stato.sedi.map((s) => `<option value="${esc(s)}"${s === stato.mittente ? " selected" : ""}>${esc(s)}</option>`).join("")}
+          ${stato.sedi
+            .map((s) => `<option value="${esc(s)}"${s === stato.mittente ? " selected" : ""}>${esc(s)}</option>`)
+            .join("")}
         </select>
       </div>
 
       <div class="stack-10">
         <div class="row-between">
           <h6 class="section-label">Destinatario</h6>
-          <span class="text-muted" style="font-size:12px">${stato.clienti.length} destinatari in rubrica</span>
+          <span class="text-muted" style="font-size:12px">${stato.totaleClienti} clienti in anagrafica</span>
         </div>
-        <input class="input" id="cerca" placeholder="Cerca nella rubrica…" value="${esc(stato.cerca)}">
+        <input class="input" id="cerca" placeholder="Cerca per nome, città o codice…" value="${esc(stato.cerca)}">
         <div class="contact-list">
           ${
-            filtrati.length
-              ? filtrati
-                  .map(
-                    (c) => `
-            <button class="contact" type="button" data-cliente="${c.id}" aria-selected="${c.id === stato.sel}">
-              <span class="contact-text">
-                <span class="contact-name">${esc(c.nome)}</span>
-                <span class="contact-sede">${esc(c.sede)}</span>
-              </span>
-              <span class="contact-mark">${c.id === stato.sel ? "SELEZIONATO" : ""}</span>
-            </button>`
-                  )
-                  .join("")
-              : `<div class="list-empty text-muted">Nessun destinatario. Importa la rubrica da CSV.</div>`
+            stato.risultati.length
+              ? stato.risultati.map(htmlContatto).join("")
+              : `<div class="list-empty text-muted">Nessun risultato. ${
+                  stato.totaleClienti ? "Prova con un altro termine." : "Importa l'anagrafica dalla Rubrica."
+                }</div>`
           }
         </div>
+        ${parziale ? `<p class="note text-muted">Primi ${stato.limiteRicerca} risultati — affina la ricerca.</p>` : ""}
+        ${
+          stato.sel && !stato.risultati.some((c) => c.id === stato.sel.id)
+            ? `<div class="scelto">
+                 <span class="scelto-nome">${esc(stato.sel.ragione_sociale)}</span>
+                 <span class="text-muted">${esc([stato.sel.indirizzo, stato.sel.cap_citta].filter(Boolean).join(" · "))}</span>
+               </div>`
+            : ""
+        }
       </div>
 
       <div class="colli">
@@ -205,11 +215,11 @@ function htmlNuova() {
         <p class="note text-muted">${stato.colli} ${stato.colli === 1 ? "etichetta" : "etichette"} · ${sheets} ${
     sheets === 1 ? "foglio A4" : "fogli A4"
   }${stato.ristampa ? " · ristampa di " + esc(stato.ristampa.codice) : ""}</p>
-        <button class="btn btn-primary btn-block btn-stampa" type="button" id="stampa"${clienteSel() ? "" : " disabled"}>${
+        <button class="btn btn-primary btn-block btn-stampa" type="button" id="stampa"${stato.sel ? "" : " disabled"}>${
     stato.ristampa ? "Ristampa" : "Stampa"
   }</button>
         <button class="btn btn-secondary btn-block" type="button" id="salva"${
-          clienteSel() && !stato.ristampa ? "" : " disabled"
+          stato.sel && stato.sel.id && !stato.ristampa ? "" : " disabled"
         }>Salva senza stampare</button>
       </div>
     </div>
@@ -225,7 +235,7 @@ function htmlStorico() {
     ${
       stato.storico.length
         ? `<table class="table">
-      <thead><tr><th>Codice</th><th>Data</th><th>Vettore</th><th>Destinatario</th><th>Sede</th><th>Colli</th><th></th></tr></thead>
+      <thead><tr><th>Codice</th><th>Data</th><th>Vettore</th><th>Destinatario</th><th>Città</th><th>Colli</th><th></th></tr></thead>
       <tbody>
         ${stato.storico
           .map(
@@ -235,7 +245,7 @@ function htmlStorico() {
             <td class="text-muted">${esc(dataBreve(r.data))}</td>
             <td><span class="tag tag-neutral">${esc(r.vettore)}</span></td>
             <td>${esc(r.nome)}</td>
-            <td class="text-muted">${esc(r.sede)}</td>
+            <td class="text-muted">${esc(r.capCitta)}</td>
             <td>${r.colli}</td>
             <td class="cell-right"><button class="btn btn-ghost" type="button" data-ristampa="${esc(r.codice)}">Ristampa</button></td>
           </tr>`
@@ -254,43 +264,55 @@ function htmlRubrica() {
   <div class="rubrica">
     <div class="rubrica-col">
       <div>
-        <h2 class="page-title">Rubrica</h2>
-        <p class="page-sub text-muted">Importa da CSV: una riga per destinatario — nome, sede.</p>
+        <h2 class="page-title">Anagrafica</h2>
+        <p class="page-sub text-muted">Importa i clienti da CSV: codice, ragione sociale, indirizzo, CAP / città, P.IVA.</p>
       </div>
       <div class="field">
         <label for="csv">CSV</label>
-        <textarea class="input csv-input" id="csv" placeholder="Mario Rossi;Stabilimento Melzo">${esc(stato.csv)}</textarea>
+        <textarea class="input csv-input" id="csv" placeholder="Codice;Ragione Sociale;Indirizzo;CAP / Citta';P.IVA">${esc(
+          stato.csv
+        )}</textarea>
       </div>
       <div class="rubrica-actions">
         <button class="btn btn-primary" type="button" id="importa"${righe ? "" : " disabled"}>Importa (${righe} righe)</button>
         <button class="btn btn-secondary" type="button" id="scegli-file">Apri file CSV…</button>
-        <button class="btn btn-secondary" type="button" id="esempio">Carica esempio</button>
         <input type="file" id="file-csv" accept=".csv,.txt" hidden>
       </div>
-      <p class="note text-muted">L'importazione sostituisce la rubrica corrente. Le sedi trovate nel file diventano anche le sedi selezionabili come mittente.${
+      <p class="note text-muted">L'importazione sostituisce l'anagrafica corrente. Dal gestionale esporta in CSV (in Excel: <em>Salva con nome → CSV UTF-8</em>).${
         stato.messaggio ? " " + esc(stato.messaggio) : ""
       }</p>
+
+      <div class="field">
+        <label for="sedi">Sedi di partenza (una per riga)</label>
+        <textarea class="input sedi-input" id="sedi">${esc(stato.sediTesto)}</textarea>
+      </div>
+      <div class="rubrica-actions">
+        <button class="btn btn-secondary" type="button" id="salva-sedi">Salva sedi</button>
+      </div>
     </div>
     <div class="rubrica-list">
-      <h6 class="text-muted" style="margin:0">${stato.clienti.length} destinatari in rubrica</h6>
+      <h6 class="text-muted" style="margin:0">${stato.totaleClienti} clienti in anagrafica</h6>
+      <input class="input" id="cerca-rubrica" placeholder="Cerca…" value="${esc(stato.cerca)}">
       ${
-        stato.clienti.length
+        stato.risultati.length
           ? `<table class="table">
-        <thead><tr><th>Destinatario</th><th>Sede</th><th></th></tr></thead>
+        <thead><tr><th>Codice</th><th>Ragione sociale</th><th>Indirizzo</th><th>CAP / Città</th><th></th></tr></thead>
         <tbody>
-          ${stato.clienti
+          ${stato.risultati
             .map(
               (c) => `
             <tr>
-              <td>${esc(c.nome)}</td>
-              <td class="text-muted">${esc(c.sede)}</td>
+              <td class="num text-muted">${esc(c.codice)}</td>
+              <td>${esc(c.ragione_sociale)}</td>
+              <td class="text-muted">${esc(c.indirizzo)}</td>
+              <td class="text-muted">${esc(c.cap_citta)}</td>
               <td class="cell-right"><button class="btn btn-ghost" type="button" data-usa="${c.id}">Usa</button></td>
             </tr>`
             )
             .join("")}
         </tbody>
       </table>`
-          : `<p class="empty-state text-muted">Rubrica vuota.</p>`
+          : `<p class="empty-state text-muted">Nessun cliente.</p>`
       }
     </div>
   </div>`;
@@ -332,6 +354,21 @@ document.querySelector(".app-nav").addEventListener("click", (e) => {
   vaiA(a.dataset.tab);
 });
 
+let timerRicerca = null;
+function ricercaDifferita() {
+  clearTimeout(timerRicerca);
+  timerRicerca = setTimeout(async () => {
+    try {
+      const r = await api("/api/clienti?q=" + encodeURIComponent(stato.cerca));
+      stato.risultati = r.clienti;
+      stato.totaleClienti = r.totaleClienti;
+      render();
+    } catch (err) {
+      console.error(err);
+    }
+  }, ATTESA_RICERCA);
+}
+
 view.addEventListener("click", async (e) => {
   const t = e.target;
 
@@ -342,9 +379,9 @@ view.addEventListener("click", async (e) => {
     return render();
   }
 
-  const cliente = t.closest("[data-cliente]");
-  if (cliente) {
-    stato.sel = Number(cliente.dataset.cliente);
+  const contatto = t.closest("[data-cliente]");
+  if (contatto) {
+    stato.sel = stato.risultati.find((c) => c.id === Number(contatto.dataset.cliente)) || stato.sel;
     stato.ristampa = null;
     return render();
   }
@@ -361,59 +398,75 @@ view.addEventListener("click", async (e) => {
   }
 
   if (t.closest("#stampa")) return stampa();
-  if (t.closest("#salva")) return registra().then(() => vaiA("storico"));
+  if (t.closest("#salva")) {
+    try {
+      await registra();
+      vaiA("storico");
+    } catch (err) {
+      alert("Impossibile registrare la spedizione: " + err.message);
+    }
+    return;
+  }
 
   const ristampa = t.closest("[data-ristampa]");
-  if (ristampa) {
-    const r = stato.storico.find((x) => x.codice === ristampa.dataset.ristampa);
-    if (!r) return;
-    const c = stato.clienti.find((x) => x.nome === r.nome && x.sede === r.sede) || stato.clienti.find((x) => x.nome === r.nome);
-    stato.sel = c ? c.id : stato.sel;
-    stato.colli = r.colli;
-    stato.vettore = stato.vettori.includes(r.vettore) ? r.vettore : stato.vettore;
-    stato.cerca = "";
-    stato.ristampa = { codice: r.codice };
-    return vaiA("nuova");
-  }
+  if (ristampa) return preparaRistampa(ristampa.dataset.ristampa);
 
   const usa = t.closest("[data-usa]");
   if (usa) {
-    stato.sel = Number(usa.dataset.usa);
-    stato.cerca = "";
+    stato.sel = stato.risultati.find((c) => c.id === Number(usa.dataset.usa)) || stato.sel;
     stato.ristampa = null;
     return vaiA("nuova");
-  }
-
-  if (t.closest("#esempio")) {
-    stato.csv = CSV_ESEMPIO;
-    stato.messaggio = null;
-    return render();
   }
 
   if (t.closest("#scegli-file")) return document.getElementById("file-csv").click();
 
   if (t.closest("#importa")) {
+    const btn = t.closest("#importa");
+    btn.disabled = true;
+    btn.textContent = "Importazione…";
     try {
-      const s = await api("/api/clienti", { method: "POST", body: JSON.stringify({ csv: stato.csv }) });
-      applicaStato(s);
-      stato.messaggio = `Importati ${s.clienti.length} destinatari.`;
+      const r = await api("/api/clienti", { method: "POST", body: JSON.stringify({ csv: stato.csv }) });
+      stato.cerca = "";
+      stato.sel = null;
+      applicaStato(r.stato);
+      stato.csv = "";
+      stato.messaggio = `Importati ${r.importati} clienti.`;
     } catch (err) {
       stato.messaggio = "Importazione fallita: " + err.message;
+    }
+    return render();
+  }
+
+  if (t.closest("#salva-sedi")) {
+    try {
+      const r = await api("/api/sedi", {
+        method: "POST",
+        body: JSON.stringify({ sedi: stato.sediTesto.split("\n") }),
+      });
+      const cerca = stato.cerca;
+      applicaStato(r.stato);
+      stato.cerca = cerca;
+      stato.messaggio = "Sedi aggiornate.";
+      ricercaDifferita();
+    } catch (err) {
+      stato.messaggio = "Salvataggio sedi fallito: " + err.message;
     }
     return render();
   }
 });
 
 view.addEventListener("input", (e) => {
-  if (e.target.id === "cerca") {
+  if (e.target.id === "cerca" || e.target.id === "cerca-rubrica") {
     stato.cerca = e.target.value;
-    return render();
+    return ricercaDifferita();
   }
   if (e.target.id === "csv") {
     stato.csv = e.target.value;
     const importa = document.getElementById("importa");
     if (importa) importa.disabled = !stato.csv.split("\n").some((r) => r.trim());
+    return;
   }
+  if (e.target.id === "sedi") stato.sediTesto = e.target.value;
 });
 
 view.addEventListener("change", async (e) => {
@@ -435,20 +488,49 @@ view.addEventListener("change", async (e) => {
   }
 });
 
+/* — azioni — */
+
+async function preparaRistampa(codiceSpedizione) {
+  const r = stato.storico.find((x) => x.codice === codiceSpedizione);
+  if (!r) return;
+  stato.colli = r.colli;
+  stato.vettore = stato.vettori.includes(r.vettore) ? r.vettore : stato.vettore;
+  stato.ristampa = { codice: r.codice };
+  stato.cerca = r.clienteCodice || r.nome;
+  stato.sel = {
+    id: null,
+    codice: r.clienteCodice,
+    ragione_sociale: r.nome,
+    indirizzo: r.indirizzo,
+    cap_citta: r.capCitta,
+  };
+  vaiA("nuova");
+  try {
+    const ric = await api("/api/clienti?q=" + encodeURIComponent(stato.cerca));
+    stato.risultati = ric.clienti;
+    const trovato = ric.clienti.find((c) => (r.clienteCodice ? c.codice === r.clienteCodice : c.ragione_sociale === r.nome));
+    if (trovato) stato.sel = trovato;
+    render();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
 async function registra() {
-  const c = clienteSel();
-  if (!c) return null;
+  if (!stato.sel || !stato.sel.id) return null;
   const { codice, stato: s } = await api("/api/spedizioni", {
     method: "POST",
     body: JSON.stringify({
       vettore: stato.vettore,
       mittente: stato.mittente,
-      destinatario: c.nome,
-      sede: c.sede,
+      clienteId: stato.sel.id,
       colli: stato.colli,
+      q: stato.cerca,
     }),
   });
+  const sel = stato.sel;
   applicaStato(s);
+  stato.sel = sel;
   return codice;
 }
 
@@ -464,7 +546,8 @@ async function stampa() {
     }
   }
   render();
-  setTimeout(() => window.print(), 60);
+  // L'ambiente di prova stampa in una finestra separata (vedi demo/).
+  setTimeout(() => (window.stampaLocale || window.print)(), 60);
 }
 
 window.addEventListener("afterprint", () => {
@@ -475,9 +558,7 @@ window.addEventListener("afterprint", () => {
 
 async function avvia() {
   try {
-    const s = await api("/api/stato");
-    applicaStato(s);
-    if (!s.clienti.length) stato.csv = CSV_ESEMPIO;
+    applicaStato(await api("/api/stato"));
   } catch (err) {
     view.innerHTML = `<div class="storico"><h2 class="page-title">Server non raggiungibile</h2><p class="text-muted">${esc(
       err.message

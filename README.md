@@ -16,6 +16,16 @@ Nessuna dipendenza da installare: il server usa `node:http` e il modulo SQLite i
 Il database viene creato al primo avvio in `data/etichette.db` (percorso modificabile con
 `DB_PATH`, porta con `PORT`).
 
+## Ambiente di prova
+
+`demo/etichette-demo.html` è l'applicazione in un unico file, con l'anagrafica incorporata e i dati
+salvati nel browser (localStorage) invece che in SQLite: serve per provare l'interfaccia senza
+installare nulla. Si rigenera con:
+
+```bash
+node demo/build.mjs [percorso/anagrafica.csv]
+```
+
 ## Schermate
 
 - **Nuova etichetta** — vettore, sede di partenza, destinatario dalla rubrica (con ricerca),
@@ -30,19 +40,23 @@ Il codice `SI-<anno>-<progressivo>` è assegnato dal server dentro una transazio
 registrazione della spedizione, quindi non ci sono numeri duplicati o saltati. Il contatore riparte
 da 1 a ogni anno solare.
 
-## Formato CSV della rubrica
+## Formato CSV dell'anagrafica
 
-Una riga per destinatario, separatore `;`, `,` o tabulazione:
+Separatore `;`, `,` o tabulazione, con riga di intestazione:
 
 ```
-Mario Rossi;Stabilimento Melzo
-Laura Riva;Stabilimento Melzo
+Codice;Ragione Sociale;Indirizzo;CAP / Citta';P.IVA
+2682;.TRRR DI ALEX NAZZI;VIA MADONNA DEL PODGORA, 32;33048 SAN GIOVANNI AL NATIS-UD;02486620301
 ```
 
-Una riga di intestazione è riconosciuta e saltata se contiene i nomi delle colonne (`nome`,
-`cliente`, `destinatario`, `ragione sociale` e `sede`, `destinazione`, `città`, `filiale`…);
-altrimenti valgono le prime due colonne. L'importazione **sostituisce** la rubrica corrente, e le
-sedi trovate nel file diventano anche le sedi selezionabili come mittente.
+Le intestazioni sono riconosciute per nome (`codice`, `ragione sociale`, `indirizzo`,
+`cap / città`, `p.iva` e sinonimi); senza intestazione valgono le prime tre colonne come ragione
+sociale, indirizzo e città. L'importazione **sostituisce** l'anagrafica corrente.
+
+Dal gestionale esporta in CSV; se hai un file Excel, in Excel usa *Salva con nome → CSV UTF-8*.
+
+Le sedi di partenza non arrivano dall'anagrafica: si gestiscono nella pagina Anagrafica, una per
+riga.
 
 ## Struttura
 
@@ -52,21 +66,30 @@ app/index.html  pagina unica
 app/app.js      stato, rendering delle tre schermate, stampa
 app/app.css     stili dell'applicazione
 app/nocturne.css design system Nocturne (token e classi, copiato dal bundle di design)
+demo/build.mjs  genera l'ambiente di prova in un unico file
+demo/demo-api.js backend locale (localStorage) usato solo dalla demo
 project/        handoff originale di Claude Design (prototipo .dc.html)
 chats/          trascrizioni della sessione di design
 ```
+
+L'interfaccia è la stessa nei due ambienti: `app/app.js` chiama `window.apiLocale` se presente,
+altrimenti il server.
 
 ## API
 
 | Metodo | Percorso          | Descrizione                                                  |
 | ------ | ----------------- | ------------------------------------------------------------ |
-| GET    | `/api/stato`      | rubrica, sedi, vettori, storico, prossimo codice             |
-| POST   | `/api/clienti`    | `{ csv }` — sostituisce la rubrica                            |
+| GET    | `/api/stato`      | anagrafica, sedi, vettori, storico, prossimo codice           |
+| GET    | `/api/clienti?q=` | ricerca clienti (primi 50 per nome, città, indirizzo, codice) |
+| POST   | `/api/clienti`    | `{ csv }` — sostituisce l'anagrafica                           |
+| POST   | `/api/sedi`       | `{ sedi }` — elenco delle sedi di partenza                     |
 | POST   | `/api/mittente`   | `{ mittente }` — memorizza la sede di partenza predefinita     |
 | POST   | `/api/spedizioni` | registra la spedizione e assegna il codice progressivo        |
 
 ## Da definire
 
-I quattro vettori sono ancora quelli di esempio del prototipo (tabella `vettori`): vanno sostituiti
-con i nomi reali, insieme agli eventuali dati specifici che ciascun vettore richiede in etichetta
-(numero conto, formato del codice, barcode).
+- **Vettori**: i quattro nomi nella tabella `vettori` sono ancora quelli di esempio del prototipo,
+  come gli eventuali dati che ciascun vettore richiede in etichetta (numero conto, formato del
+  codice, barcode).
+- **Sedi di partenza**: da inserire nella pagina Anagrafica (il database parte con una sola voce,
+  «Sede principale»).
