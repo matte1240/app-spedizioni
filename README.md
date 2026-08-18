@@ -1,25 +1,72 @@
-# CODING AGENTS: READ THIS FIRST
+# Etichette di spedizione
 
-This is a **handoff bundle** from Claude Design (claude.ai/design).
+Portale interno per stampare etichette di spedizione per vettori che non forniscono un proprio
+portale. Una etichetta per collo, numerata `1/3`, `2/3`…, impaginata due per foglio A4 adesivo
+(148,5 mm ciascuna).
 
-A user mocked up designs in HTML/CSS/JS using an AI design tool, then exported this bundle so a coding agent can implement the designs for real.
+## Avvio
 
-## What you should do — IMPORTANT
+```bash
+npm start          # http://localhost:3000
+```
 
-**Read the chat transcripts first.** There are 1 chat transcript(s) in `chats/`. The transcripts show the full back-and-forth between the user and the design assistant — they tell you **what the user actually wants** and **where they landed** after iterating. Don't skip them. The final HTML files are the output, but the chat is where the intent lives.
+Nessuna dipendenza da installare: il server usa `node:http` e il modulo SQLite integrato di Node
+(`node:sqlite`), quindi serve **Node 22.5 o superiore**.
 
-**Read `project/Portale Etichette.dc.html` in full.** The user had this file open when they triggered the handoff, so it's almost certainly the primary design they want built. Read it top to bottom — don't skim. Then **follow its imports**: open every file it pulls in (shared components, CSS, scripts) so you understand how the pieces fit together before you start implementing.
+Il database viene creato al primo avvio in `data/etichette.db` (percorso modificabile con
+`DB_PATH`, porta con `PORT`).
 
-**If anything is ambiguous, ask the user to confirm before you start implementing.** It's much cheaper to clarify scope up front than to build the wrong thing.
+## Schermate
 
-## About the design files
+- **Nuova etichetta** — vettore, sede di partenza, destinatario dalla rubrica (con ricerca),
+  numero colli, anteprima del foglio A4 e stampa.
+- **Storico** — tutte le spedizioni registrate; `Ristampa` riapre i dati nel modulo mantenendo il
+  codice originale, senza consumare un nuovo numero.
+- **Rubrica** — importazione dei destinatari da CSV (incolla il testo oppure apri un file).
 
-The design medium is **HTML/CSS/JS** — these are prototypes, not production code. Your job is to **recreate them pixel-perfectly** in whatever technology makes sense for the target codebase (React, Vue, native, whatever fits). Match the visual output; don't copy the prototype's internal structure unless it happens to fit.
+## Numerazione
 
-**Don't render these files in a browser or take screenshots unless the user asks you to.** Everything you need — dimensions, colors, layout rules — is spelled out in the source. Read the HTML and CSS directly; a screenshot won't tell you anything they don't.
+Il codice `SI-<anno>-<progressivo>` è assegnato dal server dentro una transazione al momento della
+registrazione della spedizione, quindi non ci sono numeri duplicati o saltati. Il contatore riparte
+da 1 a ogni anno solare.
 
-## Bundle contents
+## Formato CSV della rubrica
 
-- `README.md` — this file
-- `chats/` — conversation transcripts (read these!)
-- `project/` — the `Portale etichette spedizione` project files (HTML prototypes, assets, components)
+Una riga per destinatario, separatore `;`, `,` o tabulazione:
+
+```
+Mario Rossi;Stabilimento Melzo
+Laura Riva;Stabilimento Melzo
+```
+
+Una riga di intestazione è riconosciuta e saltata se contiene i nomi delle colonne (`nome`,
+`cliente`, `destinatario`, `ragione sociale` e `sede`, `destinazione`, `città`, `filiale`…);
+altrimenti valgono le prime due colonne. L'importazione **sostituisce** la rubrica corrente, e le
+sedi trovate nel file diventano anche le sedi selezionabili come mittente.
+
+## Struttura
+
+```
+server.js       server HTTP + API JSON + schema SQLite
+app/index.html  pagina unica
+app/app.js      stato, rendering delle tre schermate, stampa
+app/app.css     stili dell'applicazione
+app/nocturne.css design system Nocturne (token e classi, copiato dal bundle di design)
+project/        handoff originale di Claude Design (prototipo .dc.html)
+chats/          trascrizioni della sessione di design
+```
+
+## API
+
+| Metodo | Percorso          | Descrizione                                                  |
+| ------ | ----------------- | ------------------------------------------------------------ |
+| GET    | `/api/stato`      | rubrica, sedi, vettori, storico, prossimo codice             |
+| POST   | `/api/clienti`    | `{ csv }` — sostituisce la rubrica                            |
+| POST   | `/api/mittente`   | `{ mittente }` — memorizza la sede di partenza predefinita     |
+| POST   | `/api/spedizioni` | registra la spedizione e assegna il codice progressivo        |
+
+## Da definire
+
+I quattro vettori sono ancora quelli di esempio del prototipo (tabella `vettori`): vanno sostituiti
+con i nomi reali, insieme agli eventuali dati specifici che ciascun vettore richiede in etichetta
+(numero conto, formato del codice, barcode).

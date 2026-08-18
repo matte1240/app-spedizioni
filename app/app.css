@@ -1,0 +1,172 @@
+body { margin: 0; }
+
+.app {
+  min-height: 100vh;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+
+/* — nav — */
+.app-nav {
+  padding: 14px 32px;
+  gap: 26px;
+  position: sticky;
+  top: 0;
+  background: var(--color-bg);
+  z-index: 5;
+}
+.app-brand { display: flex; align-items: center; gap: 10px; margin-right: 28px; }
+.brand-mark {
+  width: 26px; height: 26px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent);
+  display: grid; place-items: center;
+  font-size: 11px;
+}
+.nav-meta { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.nav-meta .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-accent); }
+
+/* — shared — */
+.page-title { margin: 0 0 4px; }
+.page-sub { font-size: 13px; margin: 0; }
+.stack-10 { display: flex; flex-direction: column; gap: 10px; }
+.row-between { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.num { font-variant-numeric: tabular-nums; }
+.cell-right { text-align: right; }
+select.input { appearance: none; }
+
+/* — nuova etichetta — */
+.nuova {
+  display: grid;
+  grid-template-columns: minmax(320px, 400px) minmax(0, auto);
+  gap: 48px;
+  padding: 28px 32px 64px;
+  align-items: start;
+}
+.form-col { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  font: inherit; font-size: 13px;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--color-divider);
+  color: var(--color-text);
+}
+.chip:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
+.chip[aria-pressed='true'] { border-color: var(--color-accent); color: var(--color-accent); }
+.section-label { margin: 0; color: var(--color-accent); }
+
+.contact-list {
+  display: flex; flex-direction: column;
+  max-height: 300px; overflow: auto;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+}
+.contact {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 12px;
+  background: transparent;
+  border: 0; border-bottom: 1px solid var(--color-divider);
+  color: var(--color-text); font: inherit;
+  cursor: pointer; text-align: left;
+}
+.contact:hover { background: color-mix(in srgb, var(--color-text) 5%, transparent); }
+.contact[aria-selected='true'] {
+  box-shadow: inset 2px 0 0 var(--color-accent);
+  background: var(--color-accent-900);
+}
+.contact-text { display: flex; flex-direction: column; gap: 1px; text-align: left; min-width: 0; }
+.contact-name { font-size: 14px; font-weight: 500; }
+.contact-sede { font-size: 12px; opacity: 0.6; }
+.contact-mark { font-size: 11px; color: var(--color-accent); letter-spacing: 0.08em; }
+.list-empty { padding: 14px 12px; font-size: 13px; }
+
+.colli {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+.colli-label { font-size: 13px; }
+.colli-controls { display: flex; align-items: center; gap: 10px; }
+.colli-count { font-size: 15px; min-width: 16px; text-align: center; }
+.note { font-size: 12px; margin: 0; }
+.btn-stampa { min-height: 40px; }
+
+/* — anteprima / etichette — */
+.preview-col { display: flex; flex-direction: column; gap: 14px; }
+.preview-head { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; }
+.print-scale { transform: scale(0.55); transform-origin: top left; width: 440px; }
+.print-area { display: flex; flex-direction: column; gap: 18px; }
+.sheet {
+  width: 210mm; height: 297mm;
+  background: #ffffff; color: #17181f;
+  display: flex; flex-direction: column;
+  box-shadow: var(--shadow-md);
+}
+.slot {
+  height: 148.5mm; padding: 14mm 16mm;
+  display: flex; flex-direction: column;
+  border-bottom: 1px dashed rgba(23, 24, 31, 0.35);
+}
+.label-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 8mm;
+  border-bottom: 1px solid #17181f;
+  padding-bottom: 3mm;
+}
+.label-kicker { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; opacity: 0.55; }
+.label-vettore { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; margin-top: 1mm; }
+.label-codice { font-size: 15px; font-weight: 600; letter-spacing: 0.1em; font-variant-numeric: tabular-nums; }
+.label-dest { margin-top: 14mm; }
+.label-nome { font-size: 40px; font-weight: 600; line-height: 1.05; letter-spacing: -0.025em; margin-top: 2mm; }
+.label-sede { font-size: 22px; font-weight: 400; margin-top: 3mm; }
+.label-foot {
+  margin-top: auto;
+  display: flex; justify-content: space-between; align-items: flex-end; gap: 8mm;
+  border-top: 1px solid #17181f;
+  padding-top: 3mm;
+}
+.label-mittente { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.55; }
+.label-collo { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.slot-empty {
+  flex: 1; display: grid; place-items: center;
+  font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: rgba(23, 24, 31, 0.3);
+}
+
+/* — storico — */
+.storico { padding: 28px 32px 64px; max-width: 900px; }
+.storico .page-sub { margin: 0 0 24px; }
+.empty-state { padding: 18px 0; font-size: 13px; }
+
+/* — rubrica — */
+.rubrica {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  gap: 48px;
+  padding: 28px 32px 64px;
+  max-width: 1100px;
+  align-items: start;
+}
+.rubrica-col { display: flex; flex-direction: column; gap: 16px; }
+.csv-input { min-height: 200px; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
+.rubrica-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.rubrica-list { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+
+@media (max-width: 900px) {
+  .nuova, .rubrica { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+}
+
+@media print {
+  body * { visibility: hidden; }
+  .print-area, .print-area * { visibility: visible; }
+  .print-scale { transform: none !important; height: auto !important; width: auto !important; }
+  .print-area { position: absolute; left: 0; top: 0; gap: 0 !important; }
+  .sheet { box-shadow: none !important; break-after: page; }
+  * , *::before, *::after { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  @page { size: A4; margin: 0; }
+}

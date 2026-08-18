@@ -1,0 +1,12 @@
+{
+  "name": "etichette-spedizione",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Portale per la stampa di etichette di spedizione su fogli A4 adesivi (2 etichette per foglio)",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "start": "node server.js"
+  }
+}
