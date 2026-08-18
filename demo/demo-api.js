@@ -207,13 +207,14 @@
       return { importati: clienti.length, stato: stato("") };
     }
 
-    if (rotta === "/api/sedi") {
-      const pulite = (corpo.sedi || [])
+    if (rotta === "/api/sedi" || rotta === "/api/vettori") {
+      const campo = rotta === "/api/sedi" ? "sedi" : "vettori";
+      const pulite = (corpo[campo] || [])
         .map((s) => String(s).trim())
         .filter(Boolean)
         .filter((s, i, a) => a.indexOf(s) === i);
-      if (!pulite.length) throw new Error("Serve almeno una sede");
-      db.sedi = pulite;
+      if (!pulite.length) throw new Error(campo === "sedi" ? "Serve almeno una sede" : "Serve almeno un vettore");
+      db[campo] = pulite;
       salva();
       return { stato: stato("") };
     }

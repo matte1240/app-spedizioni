@@ -16,10 +16,12 @@ const stato = {
   cerca: "",
   csv: "",
   sediTesto: "",
+  vettoriTesto: "",
   prossimoCodice: "",
   ristampa: null,
   modifica: null, // spedizione dello storico aperta in modifica: { codice }
   messaggio: null,
+  messaggioDove: null, // dove mostrarlo: csv, sedi, vettori, storico
   // borderò
   oggi: "",
   bGiorno: "",
@@ -42,6 +44,18 @@ const esc = (s) =>
 
 const view = document.getElementById("view");
 
+/** L'esito dell'ultima azione, mostrato solo accanto ai bottoni che l'hanno prodotto. */
+const nota = (dove) =>
+  stato.messaggio && stato.messaggioDove === dove
+    ? `<p class="note text-muted">${esc(stato.messaggio)}</p>`
+    : "";
+
+/** Registra l'esito di un'azione e il punto dell'interfaccia in cui mostrarlo. */
+function segnala(dove, testo) {
+  stato.messaggioDove = dove;
+  stato.messaggio = testo;
+}
+
 async function api(path, opzioni) {
   // L'ambiente di prova (demo/) sostituisce il backend con uno locale al browser.
   if (window.apiLocale) return window.apiLocale(path, opzioni);
@@ -61,6 +75,7 @@ function applicaStato(s) {
   stato.mittente = s.mittente;
   stato.prossimoCodice = s.prossimoCodice;
   stato.sediTesto = s.sedi.join("\n");
+  stato.vettoriTesto = s.vettori.join("\n");
   stato.bordero = s.bordero || [];
   stato.giornate = s.giornate || [];
   stato.oggi = s.oggi || stato.oggi;
@@ -539,7 +554,7 @@ function htmlStorico() {
     <h2 class="page-title">Storico</h2>
     <p class="page-sub text-muted">Ristampa riapre i dati nel modulo mantenendo il codice originale. Una spedizione si
     può correggere o eliminare finché non entra in un borderò.</p>
-    ${stato.messaggio ? `<p class="note text-muted">${esc(stato.messaggio)}</p>` : ""}
+    ${nota("storico")}
     ${
       stato.storico.length
         ? `<table class="table">
@@ -596,7 +611,7 @@ function htmlRubrica() {
         <input type="file" id="file-csv" accept=".csv,.txt" hidden>
       </div>
       <p class="note text-muted">L'importazione sostituisce l'anagrafica corrente. Dal gestionale esporta in CSV (in Excel: <em>Salva con nome → CSV UTF-8</em>).${
-        stato.messaggio ? " " + esc(stato.messaggio) : ""
+        stato.messaggioDove === "csv" && stato.messaggio ? " " + esc(stato.messaggio) : ""
       }</p>
 
       <div class="field">
@@ -606,6 +621,18 @@ function htmlRubrica() {
       <div class="rubrica-actions">
         <button class="btn btn-secondary" type="button" id="salva-sedi">Salva sedi</button>
       </div>
+      ${nota("sedi")}
+
+      <div class="field">
+        <label for="vettori">Vettori (uno per riga)</label>
+        <textarea class="input sedi-input" id="vettori">${esc(stato.vettoriTesto)}</textarea>
+      </div>
+      <div class="rubrica-actions">
+        <button class="btn btn-secondary" type="button" id="salva-vettori">Salva vettori</button>
+      </div>
+      ${nota("vettori")}
+      <p class="note text-muted">L'ordine è quello dei pulsanti nelle altre schermate. Le spedizioni
+      già registrate tengono il vettore con cui sono nate, anche se qui lo togli.</p>
     </div>
     <div class="rubrica-list">
       <h6 class="text-muted" style="margin:0">${stato.totaleClienti} clienti in anagrafica</h6>
@@ -831,29 +858,15 @@ view.addEventListener("click", async (e) => {
       stato.sel = null;
       applicaStato(r.stato);
       stato.csv = "";
-      stato.messaggio = `Importati ${r.importati} clienti.`;
+      segnala("csv", `Importati ${r.importati} clienti.`);
     } catch (err) {
-      stato.messaggio = "Importazione fallita: " + err.message;
+      segnala("csv", "Importazione fallita: " + err.message);
     }
     return render();
   }
 
-  if (t.closest("#salva-sedi")) {
-    try {
-      const r = await api("/api/sedi", {
-        method: "POST",
-        body: JSON.stringify({ sedi: stato.sediTesto.split("\n") }),
-      });
-      const cerca = stato.cerca;
-      applicaStato(r.stato);
-      stato.cerca = cerca;
-      stato.messaggio = "Sedi aggiornate.";
-      ricercaDifferita();
-    } catch (err) {
-      stato.messaggio = "Salvataggio sedi fallito: " + err.message;
-    }
-    return render();
-  }
+  if (t.closest("#salva-sedi")) return salvaElenco("sedi", stato.sediTesto);
+  if (t.closest("#salva-vettori")) return salvaElenco("vettori", stato.vettoriTesto);
 });
 
 view.addEventListener("input", (e) => {
@@ -868,6 +881,7 @@ view.addEventListener("input", (e) => {
     return;
   }
   if (e.target.id === "sedi") stato.sediTesto = e.target.value;
+  if (e.target.id === "vettori") stato.vettoriTesto = e.target.value;
 });
 
 view.addEventListener("change", async (e) => {
@@ -903,6 +917,25 @@ view.addEventListener("change", async (e) => {
 });
 
 /* — azioni — */
+
+/** Salva l'elenco di sedi o vettori scritto nella schermata Anagrafica. */
+async function salvaElenco(campo, testo) {
+  const fatto = campo === "sedi" ? "Sedi aggiornate." : "Vettori aggiornati.";
+  try {
+    const r = await api("/api/" + campo, {
+      method: "POST",
+      body: JSON.stringify({ [campo]: testo.split("\n") }),
+    });
+    const cerca = stato.cerca;
+    applicaStato(r.stato);
+    stato.cerca = cerca;
+    segnala(campo, fatto);
+    ricercaDifferita();
+  } catch (err) {
+    segnala(campo, "Salvataggio fallito: " + err.message);
+  }
+  render();
+}
 
 /** Riporta nel modulo una spedizione dello storico, per ristamparla o correggerla. */
 async function apriNelModulo(codiceSpedizione, modo) {
@@ -966,7 +999,7 @@ async function salvaModifica(poiStampa) {
       render();
       return setTimeout(() => (window.stampaLocale || window.print)(), 60);
     }
-    stato.messaggio = `Spedizione ${codice} aggiornata.`;
+    segnala("storico", `Spedizione ${codice} aggiornata.`);
     vaiA("storico");
   } catch (err) {
     alert("Impossibile salvare le modifiche: " + err.message);
@@ -989,7 +1022,7 @@ async function eliminaSpedizione(codice) {
     stato.cerca = cerca;
     if (stato.modifica && stato.modifica.codice === codice) stato.modifica = null;
     if (stato.ristampa && stato.ristampa.codice === codice) stato.ristampa = null;
-    stato.messaggio = `Spedizione ${codice} eliminata.`;
+    segnala("storico", `Spedizione ${codice} eliminata.`);
     render();
   } catch (err) {
     alert("Impossibile eliminare la spedizione: " + err.message);

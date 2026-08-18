@@ -59,7 +59,10 @@ node demo/build.mjs [percorso/anagrafica.csv]
   data restano quelli originali), `Elimina` la cancella — il codice però non viene riutilizzato. Le
   due azioni restano disponibili finché la spedizione non entra in un borderò: da quel momento sono
   disattivate, perché il documento è già in mano all'autista.
-- **Rubrica** — importazione dei destinatari da CSV (incolla il testo oppure apri un file).
+- **Anagrafica** — importazione dei destinatari da CSV (incolla il testo oppure apri un file) e i due
+  elenchi dell'applicazione, uno per riga: le **sedi di partenza** e i **vettori**. L'ordine delle
+  righe è quello dei pulsanti nelle altre schermate; le spedizioni già registrate tengono il vettore
+  con cui sono nate, anche se lo togli dall'elenco.
 
 ## Stampa
 
@@ -89,8 +92,8 @@ sociale, indirizzo e città. L'importazione **sostituisce** l'anagrafica corrent
 
 Dal gestionale esporta in CSV; se hai un file Excel, in Excel usa *Salva con nome → CSV UTF-8*.
 
-Le sedi di partenza non arrivano dall'anagrafica: si gestiscono nella pagina Anagrafica, una per
-riga.
+Le sedi di partenza e i vettori non arrivano dal CSV: si scrivono nella pagina Anagrafica, uno per
+riga, e sostituiscono l'elenco precedente (serve almeno una voce per elenco).
 
 ## Struttura
 
@@ -121,6 +124,7 @@ altrimenti il server.
 | POST   | `/api/bordero/<numero>` | `{ codici }` — aggiunge spedizioni a un borderò esistente |
 | POST   | `/api/clienti`    | `{ csv }` — sostituisce l'anagrafica                           |
 | POST   | `/api/sedi`       | `{ sedi }` — elenco delle sedi di partenza                     |
+| POST   | `/api/vettori`    | `{ vettori }` — elenco dei vettori                             |
 | POST   | `/api/mittente`   | `{ mittente }` — memorizza la sede di partenza predefinita     |
 | POST   | `/api/spedizioni` | registra la spedizione e assegna il codice progressivo        |
 | PUT    | `/api/spedizioni/<codice>` | corregge una spedizione (409 se è già in un borderò) |
@@ -128,8 +132,8 @@ altrimenti il server.
 
 ## Da definire
 
-- **Vettori**: i quattro nomi nella tabella `vettori` sono ancora quelli di esempio del prototipo,
-  come gli eventuali dati che ciascun vettore richiede in etichetta (numero conto, formato del
-  codice, barcode).
-- **Sedi di partenza**: da inserire nella pagina Anagrafica (il database parte con una sola voce,
-  «Sede principale»).
+- **Vettori e sedi**: si scrivono nella pagina Anagrafica. Il database parte con i quattro nomi di
+  esempio del prototipo e con una sola sede, «Sede principale»: vanno sostituiti con quelli veri al
+  primo avvio.
+- **Dati per vettore**: restano da definire gli eventuali dati che ciascun vettore richiede in
+  etichetta (numero conto, formato del codice, barcode).

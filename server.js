@@ -209,11 +209,12 @@ const importaClienti = (clienti) =>
     for (const c of clienti) ins.run(c.codice, c.ragione_sociale, c.indirizzo, c.cap_citta, c.piva);
   });
 
-const salvaSedi = (sedi) =>
+/** Sostituisce un elenco di nomi ordinati (sedi o vettori). */
+const salvaElenco = (tabella, valori) =>
   inTransazione(() => {
-    db.prepare("DELETE FROM sedi").run();
-    const ins = db.prepare("INSERT INTO sedi (nome, ordine) VALUES (?, ?)");
-    sedi.forEach((nome, i) => ins.run(nome, i));
+    db.prepare(`DELETE FROM ${tabella}`).run();
+    const ins = db.prepare(`INSERT INTO ${tabella} (nome, ordine) VALUES (?, ?)`);
+    valori.forEach((nome, i) => ins.run(nome, i));
   });
 
 /** Avanza il contatore annuale del tipo indicato. Da usare dentro una transazione. */
@@ -465,6 +466,11 @@ function stato(q) {
 
 /* — HTTP — */
 
+const ELENCHI = {
+  "/api/sedi": { tabella: "sedi", campo: "sedi", errore: "Serve almeno una sede" },
+  "/api/vettori": { tabella: "vettori", campo: "vettori", errore: "Serve almeno un vettore" },
+};
+
 function leggiCorpo(req, limite = 20 * 1024 * 1024) {
   return new Promise((risolvi, rifiuta) => {
     let dati = "";
@@ -526,14 +532,15 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { importati: clienti.length, stato: stato("") });
     }
 
-    if (url.pathname === "/api/sedi" && req.method === "POST") {
-      const { sedi } = JSON.parse((await leggiCorpo(req)) || "{}");
-      const pulite = (Array.isArray(sedi) ? sedi : [])
+    if (ELENCHI[url.pathname] && req.method === "POST") {
+      const { tabella, campo, errore } = ELENCHI[url.pathname];
+      const corpo = JSON.parse((await leggiCorpo(req)) || "{}");
+      const pulite = (Array.isArray(corpo[campo]) ? corpo[campo] : [])
         .map((s) => String(s).trim())
         .filter(Boolean)
         .filter((s, i, a) => a.indexOf(s) === i);
-      if (!pulite.length) return json(res, 400, { errore: "Serve almeno una sede" });
-      salvaSedi(pulite);
+      if (!pulite.length) return json(res, 400, { errore });
+      salvaElenco(tabella, pulite);
       return json(res, 200, { stato: stato("") });
     }
 
