@@ -148,6 +148,11 @@ select.input { appearance: none; }
   color: rgba(23, 24, 31, 0.3);
 }
 
+/* — borderò: scelta della giornata — */
+.giornata-riga { display: flex; gap: 8px; }
+.giornata-riga select { flex: 1; min-width: 0; }
+.giornata-riga input[type='date'] { width: 132px; flex: none; }
+
 /* — borderò: riga selezionabile — */
 .riga-sped { cursor: pointer; }
 .riga-sped input { width: 15px; height: 15px; flex: none; accent-color: var(--color-accent); cursor: pointer; }
