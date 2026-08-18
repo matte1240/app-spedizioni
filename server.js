@@ -180,6 +180,14 @@ function parseCsv(text) {
 
 /* — scritture — */
 
+/** Errore con codice HTTP, per le risposte 4xx dalle funzioni di scrittura. */
+class ErroreHttp extends Error {
+  constructor(stato, messaggio) {
+    super(messaggio);
+    this.stato = stato;
+  }
+}
+
 function inTransazione(fn) {
   db.exec("BEGIN IMMEDIATE");
   try {
@@ -240,6 +248,37 @@ const creaSpedizione = (sp) =>
       sp.colli
     );
     return codice;
+  });
+
+/** Modifica una spedizione già registrata. Il codice e la data non cambiano. */
+const aggiornaSpedizione = (codice, sp) =>
+  inTransazione(() => {
+    const riga = db.prepare("SELECT bordero FROM spedizioni WHERE codice = ?").get(codice);
+    if (!riga) throw new ErroreHttp(404, "spedizione inesistente");
+    if (riga.bordero) throw new ErroreHttp(409, "La spedizione è nel borderò " + riga.bordero + ": non è più modificabile.");
+    db.prepare(
+      `UPDATE spedizioni SET vettore = ?, mittente = ?, cliente_codice = ?, destinatario = ?,
+              indirizzo = ?, cap_citta = ?, colli = ?
+       WHERE codice = ?`
+    ).run(
+      sp.vettore,
+      sp.mittente,
+      sp.cliente_codice,
+      sp.destinatario,
+      sp.indirizzo,
+      sp.cap_citta,
+      sp.colli,
+      codice
+    );
+  });
+
+/** Elimina una spedizione. Il contatore non torna indietro: il codice resta bruciato. */
+const eliminaSpedizione = (codice) =>
+  inTransazione(() => {
+    const riga = db.prepare("SELECT bordero FROM spedizioni WHERE codice = ?").get(codice);
+    if (!riga) throw new ErroreHttp(404, "spedizione inesistente");
+    if (riga.bordero) throw new ErroreHttp(409, "La spedizione è nel borderò " + riga.bordero + ": non è più eliminabile.");
+    db.prepare("DELETE FROM spedizioni WHERE codice = ?").run(codice);
   });
 
 const creaBordero = (b) =>
@@ -482,6 +521,34 @@ const server = http.createServer(async (req, res) => {
         colli: Math.max(1, Math.min(99, Number(b.colli) || 1)),
       });
       return json(res, 200, { codice, stato: stato(b.q || "") });
+    }
+
+    if (url.pathname.startsWith("/api/spedizioni/") && (req.method === "PUT" || req.method === "DELETE")) {
+      const codice = decodeURIComponent(url.pathname.slice("/api/spedizioni/".length));
+      try {
+        if (req.method === "DELETE") {
+          eliminaSpedizione(codice);
+          return json(res, 200, { stato: stato(url.searchParams.get("q") || "") });
+        }
+        const b = JSON.parse((await leggiCorpo(req)) || "{}");
+        if (!b.vettore || !b.mittente) return json(res, 400, { errore: "dati incompleti" });
+        // Il destinatario arriva dall'anagrafica; se il cliente non c'è più valgono i dati inviati.
+        const c = cliente(Number(b.clienteId));
+        const destinatario = c ? c.ragione_sociale : String(b.destinatario || "").trim();
+        if (!destinatario) return json(res, 400, { errore: "destinatario mancante" });
+        aggiornaSpedizione(codice, {
+          vettore: String(b.vettore),
+          mittente: String(b.mittente),
+          cliente_codice: c ? c.codice : String(b.clienteCodice || ""),
+          destinatario,
+          indirizzo: c ? c.indirizzo : String(b.indirizzo || ""),
+          cap_citta: c ? c.cap_citta : String(b.capCitta || ""),
+          colli: Math.max(1, Math.min(99, Number(b.colli) || 1)),
+        });
+        return json(res, 200, { codice, stato: stato(b.q || "") });
+      } catch (e) {
+        return json(res, e.stato || 400, { errore: e.message });
+      }
     }
 
     if (url.pathname === "/api/spedizioni" && req.method === "GET") {
