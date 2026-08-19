@@ -110,7 +110,8 @@ select.input { appearance: none; }
 
 /* — anteprima / etichette — */
 .preview-col { display: flex; flex-direction: column; gap: 14px; }
-.preview-head { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; }
+.preview-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 10px 24px; }
+.anteprima-scroll { max-height: 78vh; overflow: auto; }
 .print-scale { transform: scale(0.55); transform-origin: top left; width: 440px; }
 .print-area { display: flex; flex-direction: column; gap: 18px; }
 .sheet {
@@ -119,36 +120,56 @@ select.input { appearance: none; }
   display: flex; flex-direction: column;
   box-shadow: var(--shadow-md);
 }
+/* Le misure dell'etichetta stanno tutte su --scala: con quattro etichette per foglio
+   lo spazio è metà in larghezza e uguale in altezza, quindi rimpicciolisce tutto. */
 .slot {
-  height: 148.5mm; padding: 14mm 16mm;
+  --scala: 1;
+  height: 148.5mm;
+  padding: calc(14mm * var(--scala)) calc(16mm * var(--scala));
   display: flex; flex-direction: column;
   border-bottom: 1px dashed rgba(23, 24, 31, 0.35);
 }
+/* Quattro per foglio: due colonne da 105 mm, due righe da 148,5 mm. */
+.foglio-4 { display: grid; grid-template-columns: 105mm 105mm; grid-template-rows: 148.5mm 148.5mm; }
+.foglio-4 .slot { --scala: 0.56; }
+.foglio-4 .slot:nth-child(odd) { border-right: 1px dashed rgba(23, 24, 31, 0.35); }
+
 .label-head {
-  display: flex; align-items: flex-start; justify-content: space-between; gap: 8mm;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: calc(8mm * var(--scala));
   border-bottom: 1px solid #17181f;
-  padding-bottom: 3mm;
+  padding-bottom: calc(3mm * var(--scala));
 }
-.label-kicker { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; opacity: 0.55; }
-.label-vettore { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; margin-top: 1mm; }
+.label-kicker {
+  font-size: calc(10px * var(--scala)); letter-spacing: 0.18em; text-transform: uppercase; opacity: 0.55;
+}
+.label-vettore {
+  font-size: calc(20px * var(--scala)); font-weight: 600; letter-spacing: -0.01em; margin-top: 1mm;
+}
 .label-rif { display: flex; flex-direction: column; align-items: flex-end; gap: 1mm; text-align: right; }
-.label-codice { font-size: 15px; font-weight: 600; letter-spacing: 0.1em; font-variant-numeric: tabular-nums; }
-.label-ddt { font-size: 13px; font-weight: 500; letter-spacing: 0.06em; font-variant-numeric: tabular-nums; }
-.label-dest { margin-top: 14mm; }
-.label-nome { font-size: 40px; font-weight: 600; line-height: 1.05; letter-spacing: -0.025em; margin-top: 2mm; }
-.label-sede { font-size: 22px; font-weight: 400; margin-top: 3mm; }
+.label-codice {
+  font-size: calc(15px * var(--scala)); font-weight: 600; letter-spacing: 0.1em; font-variant-numeric: tabular-nums;
+}
+.label-ddt {
+  font-size: calc(13px * var(--scala)); font-weight: 500; letter-spacing: 0.06em; font-variant-numeric: tabular-nums;
+}
+.label-dest { margin-top: calc(14mm * var(--scala)); }
+.label-nome {
+  font-size: calc(40px * var(--scala)); font-weight: 600; line-height: 1.05;
+  letter-spacing: -0.025em; margin-top: 2mm;
+}
+.label-sede { font-size: calc(22px * var(--scala)); font-weight: 400; margin-top: calc(3mm * var(--scala)); }
 .label-foot {
   margin-top: auto;
-  display: flex; justify-content: space-between; align-items: flex-end; gap: 8mm;
+  display: flex; justify-content: space-between; align-items: flex-end; gap: calc(6mm * var(--scala));
   border-top: 1px solid #17181f;
-  padding-top: 3mm;
+  padding-top: calc(3mm * var(--scala));
 }
-.label-mittente { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.55; }
-.label-peso { font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; margin-left: auto; }
-.label-collo { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.label-mittente { font-size: calc(10px * var(--scala)); letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.55; }
+.label-peso { font-size: calc(14px * var(--scala)); font-weight: 500; font-variant-numeric: tabular-nums; margin-left: auto; }
+.label-collo { font-size: calc(15px * var(--scala)); font-weight: 600; font-variant-numeric: tabular-nums; }
 .slot-empty {
   flex: 1; display: grid; place-items: center;
-  font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;
+  font-size: calc(11px * var(--scala)); letter-spacing: 0.16em; text-transform: uppercase;
   color: rgba(23, 24, 31, 0.3);
 }
 
@@ -265,7 +286,7 @@ select.input { appearance: none; }
     display: block !important;
   }
   .app-nav, .form-col, .preview-head, .storico, .rubrica, .avviso { display: none !important; }
-  .nuova, .preview-col, .print-scale, .print-area {
+  .nuova, .preview-col, .anteprima-scroll, .print-scale, .print-area {
     display: block !important;
     margin: 0 !important;
     padding: 0 !important;
@@ -273,6 +294,7 @@ select.input { appearance: none; }
     width: auto !important;
     height: auto !important;
     max-width: none !important;
+    max-height: none !important;
     overflow: visible !important;
     transform: none !important;
   }

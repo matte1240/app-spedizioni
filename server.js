@@ -486,6 +486,7 @@ function stato(q) {
     storico: db.prepare(`${RIGA_SPEDIZIONE} ORDER BY id DESC LIMIT 200`).all().map(mappaSpedizione),
     bordero: elencoBordero(),
     giornate: giornate(),
+    formato: Number(getImpostazione.get("formato")?.valore) === 4 ? 4 : 2,
     prossimoCodice: prossimoCodice(),
     oggi: giornoLocale(new Date().toISOString()),
   };
@@ -569,6 +570,14 @@ const server = http.createServer(async (req, res) => {
       if (!pulite.length) return json(res, 400, { errore });
       salvaElenco(tabella, pulite);
       return json(res, 200, { stato: stato("") });
+    }
+
+    if (url.pathname === "/api/formato" && req.method === "POST") {
+      const { formato } = JSON.parse((await leggiCorpo(req)) || "{}");
+      const n = Number(formato);
+      if (n !== 2 && n !== 4) return json(res, 400, { errore: "formato non previsto" });
+      setImpostazione.run("formato", String(n));
+      return json(res, 200, { formato: n });
     }
 
     if (url.pathname === "/api/mittente" && req.method === "POST") {

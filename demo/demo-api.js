@@ -137,6 +137,7 @@
       storico: db.spedizioni.slice(0, 200),
       bordero: elencoBordero(),
       giornate: giornate(),
+      formato: db.formato === 4 ? 4 : 2,
       prossimoCodice: prossimoCodice(),
       oggi: giornoLocale(new Date().toISOString()),
     };
@@ -232,6 +233,14 @@
       db[campo] = pulite;
       salva();
       return { stato: stato("") };
+    }
+
+    if (rotta === "/api/formato") {
+      const n = Number(corpo.formato);
+      if (n !== 2 && n !== 4) throw new Error("formato non previsto");
+      db.formato = n;
+      salva();
+      return { formato: n };
     }
 
     if (rotta === "/api/mittente") {
