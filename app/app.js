@@ -13,6 +13,8 @@ const stato = {
   vettore: "",
   sel: null, // cliente selezionato (oggetto completo)
   colli: 1,
+  ddt: "",
+  peso: "", // in kg, facoltativo: vuoto vuol dire «non indicato»
   cerca: "",
   csv: "",
   sediTesto: "",
@@ -34,10 +36,13 @@ const stato = {
   bordero: [],
 };
 
-/* Righe per pagina: l'ultima pagina porta anche totali e firme, quindi ne
-   contiene meno (misurato sul foglio A4 reale). */
-const RIGHE_PAGINA = 15;
-const RIGHE_ULTIMA = 12;
+/* Ripiego se il foglio non si può misurare: l'ultima pagina porta anche totali e
+   firme, quindi contiene meno righe. */
+const RIGHE_PAGINA = 13;
+const RIGHE_ULTIMA = 10;
+
+/* Un millimetro in pixel CSS: il foglio è disegnato in millimetri, il layout misura in pixel. */
+const MM = 96 / 25.4;
 
 const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -111,11 +116,20 @@ function etichette(codice) {
       capCitta: c ? c.cap_citta : "",
       codice,
       vettore: stato.vettore,
+      ddt: stato.ddt.trim(),
+      peso: pesoTesto(String(stato.peso).replace(",", ".")),
       mittente: "Da: " + stato.mittente + " · " + dataOggi(),
       collo: `${i + 1} / ${stato.colli}`,
     });
   }
   return out;
+}
+
+/** Il peso per gli elenchi e i documenti: vuoto se non indicato. */
+function pesoTesto(kg) {
+  const n = Number(kg);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  return n.toLocaleString("it-IT", { maximumFractionDigits: 3 }) + " kg";
 }
 
 function fogli(labels) {
@@ -135,7 +149,10 @@ function htmlSlot(l) {
           <div class="label-kicker">Vettore</div>
           <div class="label-vettore">${esc(l.vettore)}</div>
         </div>
-        <span class="label-codice">${esc(l.codice)}</span>
+        <div class="label-rif">
+          <span class="label-codice">${esc(l.codice)}</span>
+          ${l.ddt ? `<span class="label-ddt">DDT ${esc(l.ddt)}</span>` : ""}
+        </div>
       </div>
       <div class="label-dest">
         <div class="label-kicker">Destinatario${l.codiceCliente ? " · cliente " + esc(l.codiceCliente) : ""}</div>
@@ -145,6 +162,7 @@ function htmlSlot(l) {
       </div>
       <div class="label-foot">
         <span class="label-mittente">${esc(l.mittente)}</span>
+        ${l.peso ? `<span class="label-peso">${esc(l.peso)}</span>` : ""}
         <span class="label-collo">${esc(l.collo)}</span>
       </div>
     </div>`;
@@ -190,6 +208,8 @@ function htmlContatto(c) {
 function htmlNuova() {
   const sheets = Math.ceil(stato.colli / 2);
   const parziale = stato.risultati.length >= stato.limiteRicerca;
+  // Senza destinatario o senza DDT non si stampa e non si salva.
+  const completo = !!stato.sel && !!stato.ddt.trim();
   return `
   <div class="nuova">
     <div class="form-col">
@@ -221,6 +241,17 @@ function htmlNuova() {
             .map((s) => `<option value="${esc(s)}"${s === stato.mittente ? " selected" : ""}>${esc(s)}</option>`)
             .join("")}
         </select>
+      </div>
+
+      <div class="campi-affiancati">
+        <div class="field">
+          <label for="ddt">Numero DDT</label>
+          <input class="input" id="ddt" value="${esc(stato.ddt)}" placeholder="es. 1234">
+        </div>
+        <div class="field">
+          <label for="peso">Peso (kg)</label>
+          <input class="input" id="peso" value="${esc(stato.peso)}" inputmode="decimal" placeholder="facoltativo">
+        </div>
       </div>
 
       <div class="stack-10">
@@ -261,17 +292,23 @@ function htmlNuova() {
       <div class="stack-10">
         <p class="note text-muted">${stato.colli} ${stato.colli === 1 ? "etichetta" : "etichette"} · ${sheets} ${
     sheets === 1 ? "foglio A4" : "fogli A4"
-  }${stato.ristampa ? " · ristampa di " + esc(stato.ristampa.codice) : ""}</p>
+  }${stato.ristampa ? " · ristampa di " + esc(stato.ristampa.codice) : ""}${
+    stato.sel && !stato.ddt.trim() ? " · manca il numero DDT" : ""
+  }</p>
         ${
           stato.modifica
-            ? `<button class="btn btn-primary btn-block btn-stampa" type="button" id="aggiorna">Salva modifiche</button>
-               <button class="btn btn-secondary btn-block" type="button" id="aggiorna-stampa">Salva e ristampa</button>
+            ? `<button class="btn btn-primary btn-block btn-stampa" type="button" id="aggiorna"${
+                completo ? "" : " disabled"
+              }>Salva modifiche</button>
+               <button class="btn btn-secondary btn-block" type="button" id="aggiorna-stampa"${
+                 completo ? "" : " disabled"
+               }>Salva e ristampa</button>
                <button class="btn btn-ghost btn-block" type="button" id="annulla-modifica">Annulla</button>`
             : `<button class="btn btn-primary btn-block btn-stampa" type="button" id="stampa"${
-                stato.sel ? "" : " disabled"
+                completo ? "" : " disabled"
               }>${stato.ristampa ? "Ristampa" : "Stampa"}</button>
                <button class="btn btn-secondary btn-block" type="button" id="salva"${
-                 stato.sel && stato.sel.id && !stato.ristampa ? "" : " disabled"
+                 completo && stato.sel.id && !stato.ristampa ? "" : " disabled"
                }>Salva senza stampare</button>`
         }
         <p class="note text-muted">Nella finestra di stampa: scala 100% e margini «Nessuno», altrimenti le etichette non
@@ -321,11 +358,79 @@ function borderoCorrente() {
     mittente: (righe[0] && righe[0].mittente) || stato.mittente,
     righe,
     colli: righe.reduce((n, r) => n + r.colli, 0),
+    peso: righe.reduce((n, r) => n + (Number(r.peso) || 0), 0),
   };
 }
 
-/** Divide le righe in pagine A4, riservando spazio a totali e firme sull'ultima. */
-function impagina(righe) {
+/** Misura sul foglio vero quanto spazio resta alle righe e quanto è alta ciascuna:
+    gli indirizzi lunghi vanno a capo, quindi le righe non sono tutte uguali. */
+function misureBordero(b, righe) {
+  const misura = document.createElement("div");
+  misura.className = "print-area";
+  misura.style.cssText = "position:absolute;left:-10000px;top:0;visibility:hidden";
+  misura.innerHTML = htmlPaginaBordero(b, righe, 1, 1, 0);
+  document.body.appendChild(misura);
+  const alto = (sel) => {
+    const el = misura.querySelector(sel);
+    return el ? el.getBoundingClientRect().height : 0;
+  };
+  const altezze = [...misura.querySelectorAll(".bordero-table tbody tr")].map((tr) => tr.getBoundingClientRect().height);
+  const gap = 5 * MM;
+  // 297 mm meno i margini interni del foglio (14 sopra, 10 sotto) e un millimetro di sicurezza.
+  const utile = (297 - 14 - 10 - 1) * MM;
+  const normale = utile - alto(".bordero-head") - alto(".bordero-table thead") - alto(".bordero-pie") - 2 * gap;
+  // L'ultima pagina porta anche totali e firme (che hanno 4 mm di stacco sopra).
+  const ultima = normale - alto(".bordero-totali") - alto(".bordero-firme") - 4 * MM - 2 * gap;
+  misura.remove();
+  return { normale, ultima, altezze };
+}
+
+/** Divide le righe in pagine A4 riempiendo ogni foglio fino all'altezza disponibile,
+    con totali e firme sull'ultima. */
+function impagina(b, righe) {
+  if (righe.length <= 1) return [righe];
+  const { normale, ultima, altezze } = misureBordero(b, righe);
+  if (!(ultima > 0) || altezze.length !== righe.length || altezze.some((h) => !(h > 0))) {
+    return impaginaFissa(righe);
+  }
+
+  const blocchi = [];
+  for (let inizio = 0; inizio < righe.length; ) {
+    let fine = inizio;
+    let usato = 0;
+    while (fine < righe.length && (fine === inizio || usato + altezze[fine] <= normale)) {
+      usato += altezze[fine];
+      fine++;
+    }
+    blocchi.push([inizio, fine]);
+    inizio = fine;
+  }
+
+  // Se sull'ultima pagina non ci stanno anche totali e firme, le righe di troppo passano
+  // a una pagina nuova.
+  const [inizioUltima, fineUltima] = blocchi[blocchi.length - 1];
+  const somma = (da, a) => altezze.slice(da, a).reduce((n, h) => n + h, 0);
+  if (somma(inizioUltima, fineUltima) > ultima) {
+    let taglio = fineUltima;
+    let usato = 0;
+    while (taglio > inizioUltima && usato + altezze[taglio - 1] <= ultima) {
+      usato += altezze[taglio - 1];
+      taglio--;
+    }
+    if (taglio > inizioUltima) {
+      blocchi[blocchi.length - 1] = [inizioUltima, taglio];
+      blocchi.push([taglio, fineUltima]);
+    } else {
+      // Nemmeno una riga sta insieme a totali e firme: quelli vanno su una pagina da soli.
+      blocchi.push([fineUltima, fineUltima]);
+    }
+  }
+
+  return blocchi.map(([da, a]) => righe.slice(da, a));
+}
+
+/** Ripiego a numero fisso di righe, se la misura sul foglio non è possibile. */
+function impaginaFissa(righe) {
   if (righe.length <= RIGHE_ULTIMA) return [righe];
   const prime = righe.slice(0, righe.length - RIGHE_ULTIMA);
   const quante = Math.ceil(prime.length / RIGHE_PAGINA);
@@ -353,7 +458,7 @@ function htmlPaginaBordero(b, righe, pagina, pagine, primo) {
       </div>
       <table class="bordero-table">
         <thead>
-          <tr><th>#</th><th>Spedizione</th><th>Destinatario</th><th>Indirizzo</th><th>Località</th><th class="col-colli">Colli</th></tr>
+          <tr><th>#</th><th>Spedizione</th><th>DDT</th><th>Destinatario</th><th>Indirizzo</th><th>Località</th><th class="col-colli">Colli</th><th class="col-peso">Peso</th></tr>
         </thead>
         <tbody>
           ${
@@ -364,14 +469,18 @@ function htmlPaginaBordero(b, righe, pagina, pagine, primo) {
             <tr>
               <td>${primo + i + 1}</td>
               <td class="num">${esc(r.codice)}</td>
+              <td class="num">${esc(r.ddt || "—")}</td>
               <td>${esc(r.nome)}</td>
               <td>${esc(r.indirizzo)}</td>
               <td>${esc(r.capCitta)}</td>
               <td class="col-colli">${r.colli}</td>
+              <td class="col-peso">${esc(pesoTesto(r.peso) || "—")}</td>
             </tr>`
                   )
                   .join("")
-              : `<tr><td colspan="6" class="bordero-vuoto">Nessuna spedizione selezionata</td></tr>`
+              : b.righe.length
+              ? ""
+              : `<tr><td colspan="8" class="bordero-vuoto">Nessuna spedizione selezionata</td></tr>`
           }
         </tbody>
       </table>
@@ -381,7 +490,7 @@ function htmlPaginaBordero(b, righe, pagina, pagine, primo) {
                <span>Totale</span>
                <strong>${b.righe.length} ${b.righe.length === 1 ? "spedizione" : "spedizioni"} · ${b.colli} ${
               b.colli === 1 ? "collo" : "colli"
-            }</strong>
+            }${pesoTesto(b.peso) ? " · " + esc(pesoTesto(b.peso)) : ""}</strong>
              </div>
              <div class="bordero-firme">
                <div class="firma"><span>Consegnato da</span><div class="riga-firma"></div></div>
@@ -398,7 +507,7 @@ function htmlPaginaBordero(b, righe, pagina, pagine, primo) {
 
 function htmlAnteprimaBordero() {
   const b = borderoCorrente();
-  const pagine = impagina(b.righe);
+  const pagine = impagina(b, b.righe);
   let primo = 0;
   const fogli = pagine.map((righe, i) => {
     const html = htmlPaginaBordero(b, righe, i + 1, pagine.length, primo);
@@ -476,7 +585,9 @@ function htmlBordero() {
 
       <div class="colli">
         <span class="colli-label">${b.righe.length} ${b.righe.length === 1 ? "spedizione" : "spedizioni"}</span>
-        <span class="colli-count">${b.colli} ${b.colli === 1 ? "collo" : "colli"}</span>
+        <span class="colli-count">${b.colli} ${b.colli === 1 ? "collo" : "colli"}${
+    pesoTesto(b.peso) ? " · " + esc(pesoTesto(b.peso)) : ""
+  }</span>
       </div>
 
       <div class="stack-10">
@@ -542,9 +653,13 @@ function htmlRigaSpedizione(s) {
       <input type="checkbox" data-sped="${esc(s.codice)}"${spuntata ? " checked" : ""}${inBordero ? " disabled" : ""}>
       <span class="contact-text">
         <span class="contact-name">${esc(s.nome)}</span>
-        <span class="contact-sede">${esc(s.codice)} · ${esc(s.capCitta)}</span>
+        <span class="contact-sede">${esc(s.codice)}${s.ddt ? " · DDT " + esc(s.ddt) : ""} · ${esc(s.capCitta)}</span>
       </span>
-      <span class="contact-mark">${inBordero ? esc(s.bordero) : s.colli + (s.colli === 1 ? " collo" : " colli")}</span>
+      <span class="contact-mark">${
+        inBordero
+          ? esc(s.bordero)
+          : s.colli + (s.colli === 1 ? " collo" : " colli") + (pesoTesto(s.peso) ? " · " + esc(pesoTesto(s.peso)) : "")
+      }</span>
     </label>`;
 }
 
@@ -558,18 +673,20 @@ function htmlStorico() {
     ${
       stato.storico.length
         ? `<table class="table">
-      <thead><tr><th>Codice</th><th>Data</th><th>Vettore</th><th>Destinatario</th><th>Città</th><th>Colli</th><th>Borderò</th><th></th></tr></thead>
+      <thead><tr><th>Codice</th><th>DDT</th><th>Data</th><th>Vettore</th><th>Destinatario</th><th>Città</th><th>Colli</th><th>Peso</th><th>Borderò</th><th></th></tr></thead>
       <tbody>
         ${stato.storico
           .map(
             (r) => `
           <tr>
             <td class="num">${esc(r.codice)}</td>
+            <td class="num">${r.ddt ? esc(r.ddt) : "—"}</td>
             <td class="text-muted">${esc(dataBreve(r.data))}</td>
             <td><span class="tag tag-neutral">${esc(r.vettore)}</span></td>
             <td>${esc(r.nome)}</td>
             <td class="text-muted">${esc(r.capCitta)}</td>
             <td>${r.colli}</td>
+            <td class="num text-muted">${pesoTesto(r.peso) || "—"}</td>
             <td class="num text-muted">${r.bordero ? esc(r.bordero) : "—"}</td>
             <td class="cell-right azioni-riga">
               <button class="btn btn-ghost" type="button" data-ristampa="${esc(r.codice)}">Ristampa</button>
@@ -814,6 +931,7 @@ view.addEventListener("click", async (e) => {
   if (t.closest("#salva")) {
     try {
       await registra();
+      azzeraModulo();
       vaiA("storico");
     } catch (err) {
       alert("Impossibile registrare la spedizione: " + err.message);
@@ -880,6 +998,10 @@ view.addEventListener("input", (e) => {
     if (importa) importa.disabled = !stato.csv.split("\n").some((r) => r.trim());
     return;
   }
+  if (e.target.id === "ddt" || e.target.id === "peso") {
+    stato[e.target.id] = e.target.value;
+    return render();
+  }
   if (e.target.id === "sedi") stato.sediTesto = e.target.value;
   if (e.target.id === "vettori") stato.vettoriTesto = e.target.value;
 });
@@ -942,6 +1064,8 @@ async function apriNelModulo(codiceSpedizione, modo) {
   const r = stato.storico.find((x) => x.codice === codiceSpedizione);
   if (!r) return;
   stato.colli = r.colli;
+  stato.ddt = r.ddt || "";
+  stato.peso = r.peso ? String(r.peso).replace(".", ",") : "";
   stato.vettore = stato.vettori.includes(r.vettore) ? r.vettore : stato.vettore;
   if (stato.sedi.includes(r.mittente)) stato.mittente = r.mittente;
   stato.ristampa = modo === "ristampa" ? { codice: r.codice } : null;
@@ -987,6 +1111,8 @@ async function salvaModifica(poiStampa) {
         indirizzo: stato.sel ? stato.sel.indirizzo : "",
         capCitta: stato.sel ? stato.sel.cap_citta : "",
         colli: stato.colli,
+        ddt: stato.ddt,
+        peso: stato.peso,
         q: stato.cerca,
       }),
     });
@@ -1085,6 +1211,8 @@ async function registra() {
       mittente: stato.mittente,
       clienteId: stato.sel.id,
       colli: stato.colli,
+      ddt: stato.ddt,
+      peso: stato.peso,
       q: stato.cerca,
     }),
   });
@@ -1110,9 +1238,17 @@ async function stampa() {
   setTimeout(() => (window.stampaLocale || window.print)(), 60);
 }
 
+/** Svuota i dati della singola spedizione, lasciando vettore, sede e destinatario. */
+function azzeraModulo() {
+  stato.ddt = "";
+  stato.peso = "";
+  stato.colli = 1;
+}
+
 window.addEventListener("afterprint", () => {
   if (!stato.ristampa) return;
   stato.ristampa = null;
+  azzeraModulo();
   render();
 });
 

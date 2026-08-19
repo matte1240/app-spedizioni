@@ -41,6 +41,8 @@ db.exec(`
     indirizzo TEXT NOT NULL DEFAULT '',
     cap_citta TEXT NOT NULL DEFAULT '',
     colli INTEGER NOT NULL,
+    ddt TEXT NOT NULL DEFAULT '',
+    peso REAL NOT NULL DEFAULT 0,
     bordero TEXT NOT NULL DEFAULT ''
   );
   CREATE TABLE IF NOT EXISTS bordero (
@@ -71,6 +73,13 @@ function migra() {
 
   if (!colonne("spedizioni").includes("bordero")) {
     db.exec("ALTER TABLE spedizioni ADD COLUMN bordero TEXT NOT NULL DEFAULT ''");
+  }
+  // ddt e peso: le spedizioni già registrate restano senza (stringa vuota e 0).
+  if (!colonne("spedizioni").includes("ddt")) {
+    db.exec("ALTER TABLE spedizioni ADD COLUMN ddt TEXT NOT NULL DEFAULT ''");
+  }
+  if (!colonne("spedizioni").includes("peso")) {
+    db.exec("ALTER TABLE spedizioni ADD COLUMN peso REAL NOT NULL DEFAULT 0");
   }
   // contatore: da una riga per anno a una riga per (tipo, anno).
   if (!colonne("contatore").includes("tipo")) {
@@ -180,6 +189,16 @@ function parseCsv(text) {
 
 /* — scritture — */
 
+/** Il numero del documento di trasporto: obbligatorio, una riga sola. */
+const ddtValido = (v) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
+
+/** Il peso in kg: facoltativo, 0 vuol dire «non indicato». Accetta la virgola. */
+function pesoValido(v) {
+  const n = Number(String(v ?? "").replace(",", ".").trim());
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(Math.round(n * 1000) / 1000, 99999);
+}
+
 /** Errore con codice HTTP, per le risposte 4xx dalle funzioni di scrittura. */
 class ErroreHttp extends Error {
   constructor(stato, messaggio) {
@@ -235,8 +254,9 @@ const creaSpedizione = (sp) =>
     const codice = codiceDa(anno, seq);
     db.prepare(
       `INSERT INTO spedizioni
-         (codice, creato_at, vettore, mittente, cliente_codice, destinatario, indirizzo, cap_citta, colli)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         (codice, creato_at, vettore, mittente, cliente_codice, destinatario, indirizzo, cap_citta,
+          colli, ddt, peso)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       codice,
       new Date().toISOString(),
@@ -246,7 +266,9 @@ const creaSpedizione = (sp) =>
       sp.destinatario,
       sp.indirizzo,
       sp.cap_citta,
-      sp.colli
+      sp.colli,
+      sp.ddt,
+      sp.peso
     );
     return codice;
   });
@@ -259,7 +281,7 @@ const aggiornaSpedizione = (codice, sp) =>
     if (riga.bordero) throw new ErroreHttp(409, "La spedizione è nel borderò " + riga.bordero + ": non è più modificabile.");
     db.prepare(
       `UPDATE spedizioni SET vettore = ?, mittente = ?, cliente_codice = ?, destinatario = ?,
-              indirizzo = ?, cap_citta = ?, colli = ?
+              indirizzo = ?, cap_citta = ?, colli = ?, ddt = ?, peso = ?
        WHERE codice = ?`
     ).run(
       sp.vettore,
@@ -269,6 +291,8 @@ const aggiornaSpedizione = (codice, sp) =>
       sp.indirizzo,
       sp.cap_citta,
       sp.colli,
+      sp.ddt,
+      sp.peso,
       codice
     );
   });
@@ -343,7 +367,7 @@ function prossimoCodice() {
 }
 
 const RIGA_SPEDIZIONE = `SELECT codice, creato_at, vettore, mittente, cliente_codice, destinatario,
-                                indirizzo, cap_citta, colli, bordero FROM spedizioni`;
+                                indirizzo, cap_citta, colli, ddt, peso, bordero FROM spedizioni`;
 
 const mappaSpedizione = (r) => ({
   codice: r.codice,
@@ -355,6 +379,8 @@ const mappaSpedizione = (r) => ({
   indirizzo: r.indirizzo,
   capCitta: r.cap_citta,
   colli: r.colli,
+  ddt: r.ddt,
+  peso: r.peso,
   bordero: r.bordero,
 });
 
@@ -384,6 +410,7 @@ function borderoDettaglio(numero) {
     mittente: b.mittente,
     righe,
     colli: righe.reduce((n, r) => n + r.colli, 0),
+    peso: righe.reduce((n, r) => n + r.peso, 0),
   };
 }
 
@@ -556,6 +583,8 @@ const server = http.createServer(async (req, res) => {
       const c = cliente(Number(b.clienteId));
       if (!c) return json(res, 400, { errore: "cliente sconosciuto" });
       if (!b.vettore || !b.mittente) return json(res, 400, { errore: "dati incompleti" });
+      const ddt = ddtValido(b.ddt);
+      if (!ddt) return json(res, 400, { errore: "Manca il numero DDT" });
       const codice = creaSpedizione({
         vettore: String(b.vettore),
         mittente: String(b.mittente),
@@ -564,6 +593,8 @@ const server = http.createServer(async (req, res) => {
         indirizzo: c.indirizzo,
         cap_citta: c.cap_citta,
         colli: Math.max(1, Math.min(99, Number(b.colli) || 1)),
+        ddt,
+        peso: pesoValido(b.peso),
       });
       return json(res, 200, { codice, stato: stato(b.q || "") });
     }
@@ -581,6 +612,8 @@ const server = http.createServer(async (req, res) => {
         const c = cliente(Number(b.clienteId));
         const destinatario = c ? c.ragione_sociale : String(b.destinatario || "").trim();
         if (!destinatario) return json(res, 400, { errore: "destinatario mancante" });
+        const ddt = ddtValido(b.ddt);
+        if (!ddt) return json(res, 400, { errore: "Manca il numero DDT" });
         aggiornaSpedizione(codice, {
           vettore: String(b.vettore),
           mittente: String(b.mittente),
@@ -589,6 +622,8 @@ const server = http.createServer(async (req, res) => {
           indirizzo: c ? c.indirizzo : String(b.indirizzo || ""),
           cap_citta: c ? c.cap_citta : String(b.capCitta || ""),
           colli: Math.max(1, Math.min(99, Number(b.colli) || 1)),
+          ddt,
+          peso: pesoValido(b.peso),
         });
         return json(res, 200, { codice, stato: stato(b.q || "") });
       } catch (e) {

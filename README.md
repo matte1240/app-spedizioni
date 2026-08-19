@@ -42,12 +42,15 @@ node demo/build.mjs [percorso/anagrafica.csv]
 
 ## Schermate
 
-- **Nuova etichetta** — vettore, sede di partenza, destinatario dalla rubrica (con ricerca),
-  numero colli, anteprima del foglio A4 e stampa.
+- **Nuova etichetta** — vettore, sede di partenza, numero DDT, peso, destinatario dalla rubrica (con
+  ricerca), numero colli, anteprima del foglio A4 e stampa. Il **numero DDT è obbligatorio** (senza,
+  i pulsanti restano spenti) e finisce in etichetta sotto il codice; il **peso in kg è facoltativo**
+  (accetta la virgola) e compare in etichetta accanto al numero di collo.
 - **Borderò** — la distinta per l'autista: scegli vettore e giornata, spunta le spedizioni create e
   stampa. La giornata si sceglie dal menu dei giorni che hanno spedizioni (con quante e quante sono
   ancora da assegnare), oppure dal campo data accanto per una data qualsiasi. Ogni borderò riceve un
-  numero `BO-<anno>-<progressivo>`; una spedizione già inserita in un borderò non può finire in un
+  numero `BO-<anno>-<progressivo>`; il documento riporta DDT e peso di ogni riga, con i totali di
+  colli e chilogrammi in fondo; una spedizione già inserita in un borderò non può finire in un
   secondo (resta in elenco, barrata, con il numero a cui appartiene). Il documento si impagina da
   solo su più fogli A4 e l'ultima pagina porta totali e firme. Un borderò già stampato si riapre da
   «Borderò recenti» e accetta altre spedizioni **della stessa giornata e dello stesso vettore**: si
@@ -70,6 +73,13 @@ Le etichette vanno stampate **a scala 100% e con i margini su «Nessuno»**: il 
 millimetri (210 × 297 mm, due etichette da 148,5 mm) e deve coincidere con la fustella del foglio
 adesivo. In stampa l'interfaccia sparisce del tutto (`display: none`) e la pagina diventa bianca,
 così il foglio A4 resta l'unica cosa nel documento e il browser non impagina fogli in più.
+
+## Documento di trasporto e peso
+
+Ogni spedizione porta il **numero DDT** (obbligatorio, fino a 40 caratteri) e il **peso in kg**
+(facoltativo: vuoto o 0 vuol dire «non indicato», la virgola va bene). I due campi si correggono
+dallo Storico come il resto della spedizione. I database creati prima di questi campi si aggiornano
+da soli al primo avvio: le spedizioni già registrate restano senza DDT e senza peso.
 
 ## Numerazione
 
