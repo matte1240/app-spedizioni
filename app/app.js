@@ -19,6 +19,7 @@ const stato = {
   csv: "",
   sediTesto: "",
   vettoriTesto: "",
+  formato: 2, // etichette per foglio A4: 2 (mezzo foglio) o 4 (un quarto)
   prossimoCodice: "",
   ristampa: null,
   modifica: null, // spedizione dello storico aperta in modifica: { codice }
@@ -32,6 +33,7 @@ const stato = {
   bSel: [],
   bAperto: null,
   bNota: null, // avviso sul borderò aperto (es. righe aggiunte, da ristampare)
+  bVista: "bordero", // cosa mostra e stampa l'anteprima: "bordero" o "etichette"
   giornate: [],
   bordero: [],
 };
@@ -79,6 +81,7 @@ function applicaStato(s) {
   stato.storico = s.storico;
   stato.mittente = s.mittente;
   stato.prossimoCodice = s.prossimoCodice;
+  if (s.formato === 2 || s.formato === 4) stato.formato = s.formato;
   stato.sediTesto = s.sedi.join("\n");
   stato.vettoriTesto = s.vettori.join("\n");
   stato.bordero = s.bordero || [];
@@ -101,6 +104,14 @@ function dataBreve(iso) {
 
 function dataOggi() {
   const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
+/** La data di una spedizione registrata, gg/mm/aaaa. */
+function dataCompleta(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
   const p = (n) => String(n).padStart(2, "0");
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
@@ -132,11 +143,53 @@ function pesoTesto(kg) {
   return n.toLocaleString("it-IT", { maximumFractionDigits: 3 }) + " kg";
 }
 
-function fogli(labels) {
+/** Le etichette di più spedizioni registrate, una per collo e tutte di fila:
+    impaginate due per foglio resta al massimo mezzo foglio libero in fondo. */
+function etichetteDaSpedizioni(righe) {
   const out = [];
-  for (let i = 0; i < labels.length; i += 2) out.push([labels[i], labels[i + 1] || null]);
-  return out.length ? out : [[null, null]];
+  for (const r of righe) {
+    for (let i = 0; i < r.colli; i++) {
+      out.push({
+        codiceCliente: r.clienteCodice,
+        nome: r.nome,
+        indirizzo: r.indirizzo,
+        capCitta: r.capCitta,
+        codice: r.codice,
+        vettore: r.vettore,
+        ddt: r.ddt || "",
+        peso: pesoTesto(r.peso),
+        mittente: "Da: " + r.mittente + " · " + dataCompleta(r.data),
+        collo: `${i + 1} / ${r.colli}`,
+      });
+    }
+  }
+  return out;
 }
+
+/** Divide le etichette nei fogli A4, secondo il formato scelto (2 o 4 per foglio). */
+function fogli(labels) {
+  const per = stato.formato;
+  const out = [];
+  for (let i = 0; i < labels.length; i += per) {
+    out.push(Array.from({ length: per }, (_, k) => labels[i + k] || null));
+  }
+  return out.length ? out : [Array.from({ length: per }, () => null)];
+}
+
+/** I fogli pronti per il markup: ogni foglio porta la classe del formato. */
+const htmlFogli = (sheets) =>
+  sheets
+    .map((sh) => `<div class="sheet foglio-${stato.formato}">${sh.map(htmlSlot).join("")}</div>`)
+    .join("");
+
+/** La scelta del formato, accanto all'anteprima: dipende dai fogli adesivi che si hanno. */
+const htmlChipsFormato = () =>
+  [2, 4]
+    .map(
+      (n) =>
+        `<button class="chip" type="button" aria-pressed="${n === stato.formato}" data-formato="${n}">${n} per foglio</button>`
+    )
+    .join("");
 
 /* — render — */
 
@@ -182,12 +235,12 @@ function htmlAnteprima() {
   return `
     <div class="preview-col">
       <div class="preview-head">
-        <h6 class="text-muted" style="margin:0">Anteprima foglio A4</h6>
+        <div class="chips">${htmlChipsFormato()}</div>
         <span class="text-muted" style="font-size:12px">${esc(codice)}</span>
       </div>
-      <div class="print-scale" style="height:${altezza}px">
-        <div class="print-area">
-          ${sheets.map((sh) => `<div class="sheet">${sh.map(htmlSlot).join("")}</div>`).join("")}
+      <div class="anteprima-scroll">
+        <div class="print-scale" style="height:${altezza}px">
+          <div class="print-area">${htmlFogli(sheets)}</div>
         </div>
       </div>
     </div>`;
@@ -206,7 +259,7 @@ function htmlContatto(c) {
 }
 
 function htmlNuova() {
-  const sheets = Math.ceil(stato.colli / 2);
+  const sheets = Math.ceil(stato.colli / stato.formato);
   const parziale = stato.risultati.length >= stato.limiteRicerca;
   // Senza destinatario o senza DDT non si stampa e non si salva.
   const completo = !!stato.sel && !!stato.ddt.trim();
@@ -505,8 +558,43 @@ function htmlPaginaBordero(b, righe, pagina, pagine, primo) {
     </div>`;
 }
 
+/** L'intestazione dell'anteprima: sceglie quale documento vedere e stampare. */
+function htmlTestaAnteprima(descrizione) {
+  return `
+    <div class="preview-head">
+      <div class="chips">
+        <button class="chip" type="button" aria-pressed="${stato.bVista === "bordero"}" data-bvista="bordero">Borderò</button>
+        <button class="chip" type="button" aria-pressed="${stato.bVista === "etichette"}" data-bvista="etichette">Etichette</button>
+      </div>
+      ${stato.bVista === "etichette" ? `<div class="chips">${htmlChipsFormato()}</div>` : ""}
+      <span class="text-muted" style="font-size:12px">${esc(descrizione)}</span>
+    </div>`;
+}
+
+/** Tutte le etichette delle spedizioni del borderò, di fila su fogli da due. */
+function htmlAnteprimaEtichette(b) {
+  const labels = etichetteDaSpedizioni(b.righe);
+  const sheets = fogli(labels);
+  const altezza = Math.round(sheets.length * 297 * 3.7795 * 0.55 + (sheets.length - 1) * 18);
+  const descrizione = labels.length
+    ? `${labels.length} ${labels.length === 1 ? "etichetta" : "etichette"} · ${sheets.length} ${
+        sheets.length === 1 ? "foglio A4" : "fogli A4"
+      }`
+    : "nessuna spedizione selezionata";
+  return `
+    <div class="preview-col">
+      ${htmlTestaAnteprima(descrizione)}
+      <div class="anteprima-scroll">
+        <div class="print-scale" style="height:${altezza}px">
+          <div class="print-area">${htmlFogli(sheets)}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
 function htmlAnteprimaBordero() {
   const b = borderoCorrente();
+  if (stato.bVista === "etichette") return htmlAnteprimaEtichette(b);
   const pagine = impagina(b, b.righe);
   let primo = 0;
   const fogli = pagine.map((righe, i) => {
@@ -517,12 +605,11 @@ function htmlAnteprimaBordero() {
   const altezza = Math.round(pagine.length * 297 * 3.7795 * 0.55 + (pagine.length - 1) * 18);
   return `
     <div class="preview-col">
-      <div class="preview-head">
-        <h6 class="text-muted" style="margin:0">Anteprima borderò</h6>
-        <span class="text-muted" style="font-size:12px">${esc(b.numero === "bozza" ? "non ancora generato" : b.numero)}</span>
-      </div>
-      <div class="print-scale" style="height:${altezza}px">
-        <div class="print-area">${fogli.join("")}</div>
+      ${htmlTestaAnteprima(b.numero === "bozza" ? "non ancora generato" : b.numero)}
+      <div class="anteprima-scroll">
+        <div class="print-scale" style="height:${altezza}px">
+          <div class="print-area">${fogli.join("")}</div>
+        </div>
       </div>
     </div>`;
 }
@@ -609,11 +696,18 @@ function htmlBordero() {
                <button class="btn ${
                  disponibili.length ? "btn-secondary" : "btn-primary"
                } btn-block btn-stampa" type="button" id="stampa-bordero">Stampa borderò</button>
+               <button class="btn btn-secondary btn-block" type="button" id="stampa-etichette"${
+                 b.colli ? "" : " disabled"
+               }>Stampa etichette${b.colli ? ` (${b.colli})` : ""}</button>
                <button class="btn btn-ghost btn-block" type="button" id="nuovo-bordero">Prepara un altro borderò</button>`
-            : `<p class="note text-muted">Le spedizioni inserite in un borderò non possono finire in un secondo borderò.</p>
+            : `<p class="note text-muted">Le spedizioni inserite in un borderò non possono finire in un secondo borderò.
+               Le etichette si stampano tutte di fila, due per foglio: nessun foglio sprecato a metà.</p>
                <button class="btn btn-primary btn-block btn-stampa" type="button" id="genera-bordero"${
                  stato.bSel.length ? "" : " disabled"
-               }>Genera e stampa</button>`
+               }>Genera e stampa</button>
+               <button class="btn btn-secondary btn-block" type="button" id="stampa-etichette"${
+                 b.colli ? "" : " disabled"
+               }>Stampa etichette${b.colli ? ` (${b.colli})` : ""}</button>`
         }
       </div>
 
@@ -855,6 +949,9 @@ function ricercaDifferita() {
 view.addEventListener("click", async (e) => {
   const t = e.target;
 
+  const formato = t.closest("[data-formato]");
+  if (formato) return cambiaFormato(Number(formato.dataset.formato));
+
   const vettore = t.closest("[data-vettore]");
   if (vettore) {
     stato.vettore = vettore.dataset.vettore;
@@ -885,6 +982,7 @@ view.addEventListener("click", async (e) => {
     stato.bVettore = bVettore.dataset.bvettore;
     stato.bAperto = null;
     stato.bNota = null;
+    stato.bVista = "bordero";
     render();
     return caricaGiornata();
   }
@@ -896,15 +994,30 @@ view.addEventListener("click", async (e) => {
     return render();
   }
 
+  const bVista = t.closest("[data-bvista]");
+  if (bVista) {
+    stato.bVista = bVista.dataset.bvista;
+    return render();
+  }
+
   if (t.closest("#genera-bordero")) return generaBordero();
   if (t.closest("#aggiungi-bordero")) return aggiungiAlBordero();
+  if (t.closest("#stampa-etichette")) {
+    stato.bVista = "etichette";
+    render();
+    setTimeout(() => (window.stampaLocale || window.print)(), 60);
+    return;
+  }
   if (t.closest("#stampa-bordero")) {
+    stato.bVista = "bordero";
+    render();
     setTimeout(() => (window.stampaLocale || window.print)(), 60);
     return;
   }
   if (t.closest("#nuovo-bordero")) {
     stato.bAperto = null;
     stato.bNota = null;
+    stato.bVista = "bordero";
     render();
     return caricaGiornata();
   }
@@ -915,6 +1028,7 @@ view.addEventListener("click", async (e) => {
       const b = await api("/api/bordero?numero=" + encodeURIComponent(apri.dataset.apri));
       stato.bAperto = b;
       stato.bNota = null;
+      stato.bVista = "bordero";
       stato.bGiorno = b.giorno;
       stato.bVettore = b.vettore;
       stato.bSpedizioni = b.righe;
@@ -1023,6 +1137,7 @@ view.addEventListener("change", async (e) => {
     stato.bGiorno = e.target.value;
     stato.bAperto = null;
     stato.bNota = null;
+    stato.bVista = "bordero";
     render();
     return caricaGiornata();
   }
@@ -1039,6 +1154,18 @@ view.addEventListener("change", async (e) => {
 });
 
 /* — azioni — */
+
+/** Cambia quante etichette stanno su un foglio A4 e lo ricorda per la prossima volta. */
+async function cambiaFormato(n) {
+  if (n !== 2 && n !== 4) return;
+  stato.formato = n;
+  render();
+  try {
+    await api("/api/formato", { method: "POST", body: JSON.stringify({ formato: n }) });
+  } catch (err) {
+    console.error(err);
+  }
+}
 
 /** Salva l'elenco di sedi o vettori scritto nella schermata Anagrafica. */
 async function salvaElenco(campo, testo) {
@@ -1168,6 +1295,7 @@ async function generaBordero() {
     });
     stato.bAperto = r.bordero;
     stato.bNota = null;
+    stato.bVista = "bordero";
     stato.bSel = [];
     stato.bordero = r.stato.bordero;
     stato.storico = r.stato.storico;

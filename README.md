@@ -1,8 +1,8 @@
 # Etichette di spedizione
 
 Portale interno per stampare etichette di spedizione per vettori che non forniscono un proprio
-portale. Una etichetta per collo, numerata `1/3`, `2/3`…, impaginata due per foglio A4 adesivo
-(148,5 mm ciascuna).
+portale. Una etichetta per collo, numerata `1/3`, `2/3`…, impaginata su foglio A4 adesivo: due per
+foglio (210 × 148,5 mm) oppure quattro (105 × 148,5 mm), a seconda dei fogli che si hanno.
 
 ## Avvio
 
@@ -43,7 +43,9 @@ node demo/build.mjs [percorso/anagrafica.csv]
 ## Schermate
 
 - **Nuova etichetta** — vettore, sede di partenza, numero DDT, peso, destinatario dalla rubrica (con
-  ricerca), numero colli, anteprima del foglio A4 e stampa. Il **numero DDT è obbligatorio** (senza,
+  ricerca), numero colli, anteprima del foglio A4 e stampa. `Salva senza stampare` registra la
+  spedizione e basta: le etichette si stampano poi tutte insieme dal Borderò, senza sprecare mezzi
+  fogli. Il **numero DDT è obbligatorio** (senza,
   i pulsanti restano spenti) e finisce in etichetta sotto il codice; il **peso in kg è facoltativo**
   (accetta la virgola) e compare in etichetta accanto al numero di collo.
 - **Borderò** — la distinta per l'autista: scegli vettore e giornata, spunta le spedizioni create e
@@ -55,7 +57,10 @@ node demo/build.mjs [percorso/anagrafica.csv]
   solo su più fogli A4 e l'ultima pagina porta totali e firme. Un borderò già stampato si riapre da
   «Borderò recenti» e accetta altre spedizioni **della stessa giornata e dello stesso vettore**: si
   spuntano quelle ancora libere e si preme `Aggiungi al borderò`, poi lo si ristampa per sostituire
-  la copia dell'autista.
+  la copia dell'autista. L'anteprima ha due viste, `Borderò` ed `Etichette`: la seconda impagina di
+  fila le etichette di tutte le spedizioni scelte, due per foglio, così resta libero al massimo mezzo
+  foglio in fondo invece di uno per spedizione con numero di colli dispari. `Stampa etichette` manda
+  in stampa quella vista.
 - **Storico** — tutte le spedizioni registrate, con il borderò di appartenenza; `Ristampa` riapre i
   dati nel modulo mantenendo il codice originale, senza consumare un nuovo numero. `Modifica`
   corregge vettore, sede di partenza, destinatario e colli di una spedizione già stampata (codice e
@@ -70,8 +75,8 @@ node demo/build.mjs [percorso/anagrafica.csv]
 ## Stampa
 
 Le etichette vanno stampate **a scala 100% e con i margini su «Nessuno»**: il foglio è disegnato in
-millimetri (210 × 297 mm, due etichette da 148,5 mm) e deve coincidere con la fustella del foglio
-adesivo. In stampa l'interfaccia sparisce del tutto (`display: none`) e la pagina diventa bianca,
+millimetri (210 × 297 mm, con etichette da 210 × 148,5 mm o 105 × 148,5 mm) e deve coincidere con la
+fustella del foglio adesivo. In stampa l'interfaccia sparisce del tutto (`display: none`) e la pagina diventa bianca,
 così il foglio A4 resta l'unica cosa nel documento e il browser non impagina fogli in più.
 
 ## Documento di trasporto e peso
@@ -80,6 +85,20 @@ Ogni spedizione porta il **numero DDT** (obbligatorio, fino a 40 caratteri) e il
 (facoltativo: vuoto o 0 vuol dire «non indicato», la virgola va bene). I due campi si correggono
 dallo Storico come il resto della spedizione. I database creati prima di questi campi si aggiornano
 da soli al primo avvio: le spedizioni già registrate restano senza DDT e senza peso.
+
+## Stampa delle etichette in blocco
+
+Stampare le etichette una spedizione alla volta lascia mezzo foglio inutilizzato ogni volta che i
+colli sono dispari. Il giro normale è quindi: durante la giornata si registrano le spedizioni con
+`Salva senza stampare`, e a fine giornata, nella schermata Borderò, si passa alla vista `Etichette`
+e si stampa tutto in un colpo solo — le etichette scorrono da una spedizione all'altra sullo stesso
+foglio. Con 11 etichette servono 6 fogli invece di 8.
+
+Accanto all'anteprima — sia in «Nuova etichetta» sia nella vista `Etichette` del Borderò — si sceglie
+l'impaginazione: **2 per foglio** (mezzo A4) o **4 per foglio** (un quarto di A4, in griglia 2 × 2).
+L'etichetta rimpicciolisce in proporzione; la scelta resta memorizzata sul server, quindi vale per
+tutte le postazioni finché non si cambiano i fogli adesivi. Le stesse 11 etichette stanno in 6 fogli
+a due per foglio e in 3 a quattro per foglio.
 
 ## Numerazione
 
@@ -136,6 +155,7 @@ altrimenti il server.
 | POST   | `/api/sedi`       | `{ sedi }` — elenco delle sedi di partenza                     |
 | POST   | `/api/vettori`    | `{ vettori }` — elenco dei vettori                             |
 | POST   | `/api/mittente`   | `{ mittente }` — memorizza la sede di partenza predefinita     |
+| POST   | `/api/formato`    | `{ formato }` — etichette per foglio A4: 2 o 4                 |
 | POST   | `/api/spedizioni` | registra la spedizione e assegna il codice progressivo        |
 | PUT    | `/api/spedizioni/<codice>` | corregge una spedizione (409 se è già in un borderò) |
 | DELETE | `/api/spedizioni/<codice>` | elimina una spedizione (409 se è già in un borderò)  |
