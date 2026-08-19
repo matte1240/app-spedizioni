@@ -65,6 +65,16 @@
 
   const codiceDa = (anno, seq) => "SI-" + anno + "-" + String(seq).padStart(4, "0");
 
+  /** Il numero del documento di trasporto: obbligatorio, una riga sola. */
+  const ddtValido = (v) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
+
+  /** Il peso in kg: facoltativo, 0 vuol dire «non indicato». Accetta la virgola. */
+  function pesoValido(v) {
+    const n = Number(String(v ?? "").replace(",", ".").trim());
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return Math.min(Math.round(n * 1000) / 1000, 99999);
+  }
+
   function prossimoCodice() {
     const anno = new Date().getFullYear();
     return codiceDa(anno, (db.contatore[anno] || 0) + 1);
@@ -94,7 +104,12 @@
     const b = db.bordero.find((x) => x.numero === numero);
     if (!b) return null;
     const righe = db.spedizioni.filter((s) => s.bordero === numero).slice().reverse();
-    return { ...b, righe, colli: righe.reduce((n, r) => n + r.colli, 0) };
+    return {
+      ...b,
+      righe,
+      colli: righe.reduce((n, r) => n + r.colli, 0),
+      peso: righe.reduce((n, r) => n + (Number(r.peso) || 0), 0),
+    };
   }
 
   /** Le giornate con spedizioni, dalla più recente: alimentano il menu del borderò. */
@@ -301,6 +316,8 @@
       const c = db.clienti.find((x) => x.id === Number(corpo.clienteId));
       const destinatario = c ? c.ragione_sociale : String(corpo.destinatario || "").trim();
       if (!destinatario) throw new Error("destinatario mancante");
+      const ddt = ddtValido(corpo.ddt);
+      if (!ddt) throw new Error("Manca il numero DDT");
       Object.assign(sp, {
         vettore: String(corpo.vettore),
         mittente: String(corpo.mittente),
@@ -309,6 +326,8 @@
         indirizzo: c ? c.indirizzo : String(corpo.indirizzo || ""),
         capCitta: c ? c.cap_citta : String(corpo.capCitta || ""),
         colli: Math.max(1, Math.min(99, Number(corpo.colli) || 1)),
+        ddt,
+        peso: pesoValido(corpo.peso),
       });
       salva();
       return { codice, stato: stato(corpo.q || "") };
@@ -320,6 +339,8 @@
       const anno = new Date().getFullYear();
       const seq = (db.contatore[anno] || 0) + 1;
       db.contatore[anno] = seq;
+      const ddt = ddtValido(corpo.ddt);
+      if (!ddt) throw new Error("Manca il numero DDT");
       const codice = codiceDa(anno, seq);
       db.spedizioni.unshift({
         codice,
@@ -331,6 +352,8 @@
         indirizzo: c.indirizzo,
         capCitta: c.cap_citta,
         colli: Math.max(1, Math.min(99, Number(corpo.colli) || 1)),
+        ddt,
+        peso: pesoValido(corpo.peso),
         bordero: "",
       });
       salva();

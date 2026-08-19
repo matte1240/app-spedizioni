@@ -59,6 +59,7 @@ select.input { appearance: none; }
 .chip:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
 .chip[aria-pressed='true'] { border-color: var(--color-accent); color: var(--color-accent); }
 .section-label { margin: 0; color: var(--color-accent); }
+.campi-affiancati { display: grid; grid-template-columns: minmax(0, 1fr) 116px; gap: 12px; }
 
 .contact-list {
   display: flex; flex-direction: column;
@@ -130,7 +131,9 @@ select.input { appearance: none; }
 }
 .label-kicker { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; opacity: 0.55; }
 .label-vettore { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; margin-top: 1mm; }
+.label-rif { display: flex; flex-direction: column; align-items: flex-end; gap: 1mm; text-align: right; }
 .label-codice { font-size: 15px; font-weight: 600; letter-spacing: 0.1em; font-variant-numeric: tabular-nums; }
+.label-ddt { font-size: 13px; font-weight: 500; letter-spacing: 0.06em; font-variant-numeric: tabular-nums; }
 .label-dest { margin-top: 14mm; }
 .label-nome { font-size: 40px; font-weight: 600; line-height: 1.05; letter-spacing: -0.025em; margin-top: 2mm; }
 .label-sede { font-size: 22px; font-weight: 400; margin-top: 3mm; }
@@ -141,6 +144,7 @@ select.input { appearance: none; }
   padding-top: 3mm;
 }
 .label-mittente { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.55; }
+.label-peso { font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; margin-left: auto; }
 .label-collo { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .slot-empty {
   flex: 1; display: grid; place-items: center;
@@ -187,8 +191,13 @@ select.input { appearance: none; }
 /* Il codice spedizione non deve andare a capo: raddoppierebbe l'altezza della riga. */
 .bordero-table td:nth-child(2) { white-space: nowrap; padding-right: 4mm; }
 .bordero-table th:nth-child(1), .bordero-table td:nth-child(1) { width: 7mm; opacity: 0.55; }
-.bordero-table .col-colli { text-align: right; padding-right: 0; font-variant-numeric: tabular-nums; }
-.bordero-table td:nth-child(3) { font-weight: 600; }
+.bordero-table .col-colli, .bordero-table .col-peso {
+  text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.bordero-table .col-peso { padding-right: 0; }
+/* Il DDT sta su una riga sola; il destinatario è la colonna in evidenza. */
+.bordero-table td:nth-child(3) { white-space: nowrap; }
+.bordero-table td:nth-child(4) { font-weight: 600; }
 .bordero-vuoto { text-align: center; padding: 8mm 0; opacity: 0.45; }
 
 .bordero-totali {
@@ -212,7 +221,7 @@ select.input { appearance: none; }
 }
 
 /* — storico — */
-.storico { padding: 28px 32px 64px; max-width: 1000px; }
+.storico { padding: 28px 32px 64px; max-width: 1150px; }
 .storico .page-sub { margin: 0 0 24px; }
 .empty-state { padding: 18px 0; font-size: 13px; }
 .azioni-riga { display: flex; justify-content: flex-end; gap: 2px; white-space: nowrap; }
