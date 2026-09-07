@@ -14,7 +14,8 @@ Nessuna dipendenza da installare: il server usa `node:http` e il modulo SQLite i
 (`node:sqlite`), quindi serve **Node 22.5 o superiore**.
 
 Il database viene creato al primo avvio in `data/etichette.db` (percorso modificabile con
-`DB_PATH`, porta con `PORT`).
+`DB_PATH`, porta con `PORT`). `ADMIN_UTENTE` e `ADMIN_PASSWORD` decidono il primo utente, vedi
+[Accesso](#accesso).
 
 ### Con Docker
 
@@ -29,6 +30,53 @@ docker run -d --name etichette -p 3000:3000 -v etichette-dati:/data \
 Il database sta nel volume montato su `/data`, quindi sopravvive agli aggiornamenti
 dell'immagine. Per costruirla in locale: `docker build -t etichette . && docker run -p 3000:3000 -v
 etichette-dati:/data etichette`.
+
+### Con Docker Compose
+
+`compose.yaml` fa la stessa cosa in una riga sola:
+
+```bash
+docker compose up -d      # http://localhost:3000
+docker compose pull && docker compose up -d   # aggiorna all'ultima immagine
+docker compose down       # ferma (il volume dei dati resta)
+```
+
+Usa l'immagine pubblicata su GHCR; per far costruire l'immagine dal codice di questa cartella,
+commenta `image:` e togli il commento a `build: .`.
+
+## Accesso
+
+Il portale è protetto da una login: senza sessione ogni pagina rimanda a `/login` e le API
+rispondono `401`.
+
+Al primo avvio (database vuoto) viene creato un solo utente, `admin`, e **la sua password non è
+fissa**: la scegli tu con `ADMIN_PASSWORD`, altrimenti il server ne genera una a caso. In quel caso
+non finisce nei log — che girano fra `docker logs` e i raccoglitori esterni — ma in un file accanto
+al database, leggibile solo dal proprietario:
+
+```bash
+docker compose exec etichette cat /data/password-iniziale.txt   # con Docker
+cat data/password-iniziale.txt                                  # in locale
+```
+
+Entra, cambia la password dalla schermata Utenti e cancella il file. Con `ADMIN_UTENTE` cambi anche
+il nome del primo utente. Le due variabili contano solo alla creazione del database: dopo, le
+password si gestiscono dalla schermata Utenti.
+
+Non ci sono ruoli né permessi: chi entra vede e fa tutto. La schermata **Utenti** serve solo a dire
+chi può entrare — si aggiungono utenti, si cambia nome e password, si eliminano (l'ultimo rimasto
+no, altrimenti nessuno potrebbe più entrare).
+
+Le password sono salvate con `scrypt` e un salt per utente, mai in chiaro. La sessione è un cookie
+`HttpOnly` che dura 30 giorni; cambiare la password di un utente, o eliminarlo, chiude subito le
+sessioni aperte a suo nome. Le sessioni stanno in SQLite, quindi un riavvio del server non fa
+uscire nessuno.
+
+Il cookie non ha il flag `Secure`, così funziona anche sulla rete interna in HTTP semplice: se il
+portale viene esposto fuori dall'azienda, mettilo dietro HTTPS. Un cookie illeggibile vale come
+«nessuna sessione» e riporta alla login, invece di far fallire la richiesta.
+
+L'ambiente di prova (`demo/`) non ha un server: lì accesso e utenti non compaiono.
 
 ## Ambiente di prova
 
@@ -71,6 +119,9 @@ node demo/build.mjs [percorso/anagrafica.csv]
   elenchi dell'applicazione, uno per riga: le **sedi di partenza** e i **vettori**. L'ordine delle
   righe è quello dei pulsanti nelle altre schermate; le spedizioni già registrate tengono il vettore
   con cui sono nate, anche se lo togli dall'elenco.
+- **Utenti** — chi può entrare nel portale: si aggiunge un utente (nome utente, nome e cognome,
+  password), se ne cambia il nome o la password, lo si elimina. Tutti hanno gli stessi permessi;
+  vedi [Accesso](#accesso).
 
 ## Stampa
 
@@ -129,11 +180,13 @@ riga, e sostituiscono l'elenco precedente (serve almeno una voce per elenco).
 ```
 server.js       server HTTP + API JSON + schema SQLite
 app/index.html  pagina unica
-app/app.js      stato, rendering delle tre schermate, stampa
+app/login.html  modulo di accesso (l'unica pagina raggiungibile senza sessione)
+app/app.js      stato, rendering delle schermate, stampa
 app/app.css     stili dell'applicazione
 app/nocturne.css design system Nocturne (token e classi, copiato dal bundle di design)
 demo/build.mjs  genera l'ambiente di prova in un unico file
 demo/demo-api.js backend locale (localStorage) usato solo dalla demo
+compose.yaml    avvio con Docker Compose
 project/        handoff originale di Claude Design (prototipo .dc.html)
 chats/          trascrizioni della sessione di design
 ```
@@ -145,6 +198,13 @@ altrimenti il server.
 
 | Metodo | Percorso          | Descrizione                                                  |
 | ------ | ----------------- | ------------------------------------------------------------ |
+| POST   | `/api/login`      | `{ utente, password }` — apre la sessione (cookie `sessione`)   |
+| POST   | `/api/logout`     | chiude la sessione                                             |
+| GET    | `/api/salute`     | stato del servizio per l'`HEALTHCHECK`: non richiede sessione   |
+| GET    | `/api/utenti`     | elenco degli utenti (senza password)                           |
+| POST   | `/api/utenti`     | `{ utente, nome, password }` — crea un utente (409 se esiste)   |
+| PUT    | `/api/utenti/<id>` | `{ nome, password }` — la password si cambia solo se arriva    |
+| DELETE | `/api/utenti/<id>` | elimina un utente (400 se è l'ultimo rimasto)                  |
 | GET    | `/api/stato`      | anagrafica, sedi, vettori, storico, giornate, prossimo codice  |
 | GET    | `/api/clienti?q=` | ricerca clienti (primi 50 per nome, città, indirizzo, codice) |
 | GET    | `/api/spedizioni` | `?giorno=YYYY-MM-DD&vettore=` — spedizioni di una giornata      |
@@ -159,6 +219,8 @@ altrimenti il server.
 | POST   | `/api/spedizioni` | registra la spedizione e assegna il codice progressivo        |
 | PUT    | `/api/spedizioni/<codice>` | corregge una spedizione (409 se è già in un borderò) |
 | DELETE | `/api/spedizioni/<codice>` | elimina una spedizione (409 se è già in un borderò)  |
+
+Tutte le rotte tranne `/api/login` e `/api/salute` vogliono una sessione valida.
 
 ## Da definire
 

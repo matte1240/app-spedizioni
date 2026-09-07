@@ -1,0 +1,26 @@
+# Avvio: docker compose up -d  →  http://localhost:3000
+# Al primo avvio viene creato l'utente «admin». Scegli tu la password qui sotto
+# con ADMIN_PASSWORD; se la lasci fuori il server ne genera una a caso e la
+# scrive in /data/password-iniziale.txt dentro al volume:
+#   docker compose exec etichette cat /data/password-iniziale.txt
+services:
+  etichette:
+    image: ghcr.io/matte1240/app-spedizioni:latest
+    # Per usare il codice di questa cartella invece dell'immagine pubblicata:
+    # commenta la riga `image:` qui sopra e togli il commento a `build: .`
+    # build: .
+    container_name: etichette
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Il percorso del database dentro al container: sta nel volume qui sotto.
+      DB_PATH: /data/etichette.db
+      # Password del primo utente. Vale solo alla creazione del database: dopo,
+      # le password si cambiano dalla schermata Utenti.
+      # ADMIN_PASSWORD: scegline-una
+    volumes:
+      - etichette-dati:/data
+
+volumes:
+  etichette-dati:
