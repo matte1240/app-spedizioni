@@ -36,6 +36,11 @@ const stato = {
   bVista: "bordero", // cosa mostra e stampa l'anteprima: "bordero" o "etichette"
   giornate: [],
   bordero: [],
+  // utenti
+  utente: null, // chi è collegato
+  utenti: [],
+  uNuovo: { utente: "", nome: "", password: "" },
+  uModifica: null, // { id, nome, password }
 };
 
 /* Ripiego se il foglio non si può misurare: l'ultima pagina porta anche totali e
@@ -67,6 +72,11 @@ async function api(path, opzioni) {
   // L'ambiente di prova (demo/) sostituisce il backend con uno locale al browser.
   if (window.apiLocale) return window.apiLocale(path, opzioni);
   const res = await fetch(path, { headers: { "content-type": "application/json" }, ...opzioni });
+  // Sessione finita (scaduta, chiusa altrove): si torna al modulo di accesso.
+  if (res.status === 401) {
+    tornaAlLogin();
+    throw new Error("Sessione scaduta");
+  }
   const dati = await res.json();
   if (!res.ok) throw new Error(dati.errore || "errore di rete");
   return dati;
@@ -91,6 +101,8 @@ function applicaStato(s) {
   if (!stato.vettore || !s.vettori.includes(stato.vettore)) stato.vettore = s.vettori[0] || "";
   if (!stato.bVettore || !s.vettori.includes(stato.bVettore)) stato.bVettore = s.vettori[0] || "";
   if (!stato.sel) stato.sel = s.clienti[0] || null;
+  if (s.utente) stato.utente = s.utente;
+  if (s.utenti) stato.utenti = s.utenti;
 }
 
 /* — formattazione — */
@@ -873,12 +885,96 @@ function htmlRubrica() {
   </div>`;
 }
 
+/** Amministrazione utenti: chi entra nel portale. Tutti hanno gli stessi permessi. */
+function htmlUtenti() {
+  const m = stato.uModifica;
+  const n = stato.uNuovo;
+  return `
+  <div class="utenti">
+    <div class="utenti-col">
+      <div>
+        <h2 class="page-title">Utenti</h2>
+        <p class="page-sub text-muted">Chi può entrare nel portale. Nessuna distinzione di permessi:
+        ogni utente vede e fa le stesse cose.</p>
+      </div>
+      ${
+        m
+          ? `<h6 class="text-muted" style="margin:0">Modifica «${esc(m.utente)}»</h6>
+      <div class="field">
+        <label for="u-nome-mod">Nome e cognome</label>
+        <input class="input" id="u-nome-mod" value="${esc(m.nome)}">
+      </div>
+      <div class="field">
+        <label for="u-password-mod">Nuova password</label>
+        <input class="input" id="u-password-mod" type="password" placeholder="Lascia vuoto per non cambiarla" value="${esc(
+          m.password
+        )}">
+      </div>
+      <div class="utenti-azioni">
+        <button class="btn btn-primary" type="button" id="salva-utente">Salva</button>
+        <button class="btn btn-secondary" type="button" id="annulla-utente">Annulla</button>
+      </div>`
+          : `<h6 class="text-muted" style="margin:0">Nuovo utente</h6>
+      <div class="field">
+        <label for="u-utente">Utente</label>
+        <input class="input" id="u-utente" placeholder="es. mrossi" value="${esc(n.utente)}">
+      </div>
+      <div class="field">
+        <label for="u-nome">Nome e cognome</label>
+        <input class="input" id="u-nome" placeholder="es. Mario Rossi" value="${esc(n.nome)}">
+      </div>
+      <div class="field">
+        <label for="u-password">Password</label>
+        <input class="input" id="u-password" type="password" placeholder="almeno 4 caratteri" value="${esc(
+          n.password
+        )}">
+      </div>
+      <div class="utenti-azioni">
+        <button class="btn btn-primary" type="button" id="crea-utente"${
+          n.utente.trim() && n.password ? "" : " disabled"
+        }>Aggiungi utente</button>
+      </div>`
+      }
+      ${nota("utenti")}
+      <p class="note text-muted">Cambiando la propria password si esce dal portale: si rientra con
+      quella nuova.</p>
+    </div>
+    <div class="utenti-list">
+      <h6 class="text-muted" style="margin:0">${stato.utenti.length} utent${
+    stato.utenti.length === 1 ? "e" : "i"
+  }</h6>
+      <table class="table">
+        <thead><tr><th>Utente</th><th>Nome</th><th>Creato</th><th></th></tr></thead>
+        <tbody>
+          ${stato.utenti
+            .map((u) => {
+              const sonoIo = stato.utente && stato.utente.id === u.id;
+              return `
+            <tr>
+              <td>${esc(u.utente)} ${sonoIo ? `<span class="utente-io">tu</span>` : ""}</td>
+              <td class="text-muted">${esc(u.nome)}</td>
+              <td class="num text-muted">${esc(dataCompleta(u.creato_at))}</td>
+              <td class="cell-right">
+                <button class="btn btn-ghost" type="button" data-modifica-utente="${u.id}">Modifica</button>
+                <button class="btn btn-ghost" type="button" data-elimina-utente="${u.id}"${
+                stato.utenti.length > 1 ? "" : " disabled"
+              }>Elimina</button>
+              </td>
+            </tr>`;
+            })
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
 function render() {
   const attivo = document.activeElement;
   const focusId = attivo && attivo.id;
   const caret = attivo && "selectionStart" in attivo ? attivo.selectionStart : null;
 
-  const pagine = { storico: htmlStorico, rubrica: htmlRubrica, bordero: htmlBordero, nuova: htmlNuova };
+  const pagine = { storico: htmlStorico, rubrica: htmlRubrica, bordero: htmlBordero, utenti: htmlUtenti, nuova: htmlNuova };
   view.innerHTML = (pagine[stato.tab] || htmlNuova)();
 
   document.querySelectorAll(".app-nav a").forEach((a) => {
@@ -1099,6 +1195,26 @@ view.addEventListener("click", async (e) => {
 
   if (t.closest("#salva-sedi")) return salvaElenco("sedi", stato.sediTesto);
   if (t.closest("#salva-vettori")) return salvaElenco("vettori", stato.vettoriTesto);
+
+  if (t.closest("#crea-utente")) return creaUtente();
+  if (t.closest("#salva-utente")) return salvaUtente();
+  if (t.closest("#annulla-utente")) {
+    stato.uModifica = null;
+    stato.messaggio = null;
+    return render();
+  }
+
+  const modificaUtente = t.closest("[data-modifica-utente]");
+  if (modificaUtente) {
+    const u = stato.utenti.find((x) => x.id === Number(modificaUtente.dataset.modificaUtente));
+    if (!u) return;
+    stato.uModifica = { id: u.id, utente: u.utente, nome: u.nome, password: "" };
+    stato.messaggio = null;
+    return render();
+  }
+
+  const eliminaUtente = t.closest("[data-elimina-utente]");
+  if (eliminaUtente) return rimuoviUtente(Number(eliminaUtente.dataset.eliminaUtente));
 });
 
 view.addEventListener("input", (e) => {
@@ -1118,6 +1234,16 @@ view.addEventListener("input", (e) => {
   }
   if (e.target.id === "sedi") stato.sediTesto = e.target.value;
   if (e.target.id === "vettori") stato.vettoriTesto = e.target.value;
+
+  const campiNuovo = { "u-utente": "utente", "u-nome": "nome", "u-password": "password" };
+  if (campiNuovo[e.target.id]) {
+    stato.uNuovo[campiNuovo[e.target.id]] = e.target.value;
+    const crea = document.getElementById("crea-utente");
+    if (crea) crea.disabled = !(stato.uNuovo.utente.trim() && stato.uNuovo.password);
+    return;
+  }
+  if (e.target.id === "u-nome-mod" && stato.uModifica) stato.uModifica.nome = e.target.value;
+  if (e.target.id === "u-password-mod" && stato.uModifica) stato.uModifica.password = e.target.value;
 });
 
 view.addEventListener("change", async (e) => {
@@ -1380,7 +1506,84 @@ window.addEventListener("afterprint", () => {
   render();
 });
 
+/* — utenti — */
+
+/** Il server ha chiuso la sessione (password cambiata, utente rimosso, scadenza): si rientra. */
+function tornaAlLogin() {
+  location.href = "/login";
+}
+
+async function creaUtente() {
+  const u = stato.uNuovo;
+  try {
+    const r = await api("/api/utenti", {
+      method: "POST",
+      body: JSON.stringify({ utente: u.utente.trim(), nome: u.nome.trim(), password: u.password }),
+    });
+    applicaStato(r.stato);
+    stato.uNuovo = { utente: "", nome: "", password: "" };
+    segnala("utenti", `Utente «${u.utente.trim()}» aggiunto.`);
+  } catch (err) {
+    segnala("utenti", err.message);
+  }
+  render();
+}
+
+async function salvaUtente() {
+  const m = stato.uModifica;
+  if (!m) return;
+  try {
+    const r = await api(`/api/utenti/${m.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ nome: m.nome.trim(), password: m.password }),
+    });
+    if (r.uscito) return tornaAlLogin();
+    applicaStato(r.stato);
+    stato.uModifica = null;
+    segnala("utenti", `Utente «${m.utente}» aggiornato.`);
+  } catch (err) {
+    segnala("utenti", err.message);
+  }
+  render();
+}
+
+async function rimuoviUtente(id) {
+  const u = stato.utenti.find((x) => x.id === id);
+  if (!u) return;
+  if (!confirm(`Eliminare l'utente «${u.utente}»? Non potrà più entrare nel portale.`)) return;
+  try {
+    const r = await api(`/api/utenti/${id}`, { method: "DELETE" });
+    if (r.uscito) return tornaAlLogin();
+    applicaStato(r.stato);
+    if (stato.uModifica && stato.uModifica.id === id) stato.uModifica = null;
+    segnala("utenti", `Utente «${u.utente}» eliminato.`);
+  } catch (err) {
+    segnala("utenti", err.message);
+  }
+  render();
+}
+
+async function esci() {
+  try {
+    await api("/api/logout", { method: "POST" });
+  } catch (err) {
+    console.error(err);
+  }
+  tornaAlLogin();
+}
+
+/** Mostra chi è collegato accanto al pulsante di uscita. */
+function mostraUtente() {
+  const el = document.getElementById("nav-utente");
+  if (el && stato.utente) el.textContent = stato.utente.nome || stato.utente.utente;
+}
+
+const bottoneEsci = document.getElementById("esci");
+if (bottoneEsci) bottoneEsci.addEventListener("click", esci);
+
 async function avvia() {
+  // Nell'ambiente di prova non c'è un server: accesso e utenti non hanno senso.
+  if (window.apiLocale) document.querySelectorAll(".solo-server").forEach((el) => el.remove());
   try {
     applicaStato(await api("/api/stato"));
   } catch (err) {
@@ -1389,8 +1592,10 @@ async function avvia() {
     )}</p></div>`;
     return;
   }
+  mostraUtente();
+  const tab = ["nuova", "storico", "rubrica", "bordero", "utenti"];
   const hash = location.hash.replace("#", "");
-  vaiA(["nuova", "storico", "rubrica", "bordero"].includes(hash) ? hash : "nuova");
+  vaiA(tab.includes(hash) && !(hash === "utenti" && window.apiLocale) ? hash : "nuova");
 }
 
 avvia();

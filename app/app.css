@@ -274,6 +274,37 @@ select.input { appearance: none; }
    Fuori dai fogli non deve restare niente: con `visibility: hidden` l'interfaccia
    continuerebbe a occupare spazio e il browser stamperebbe pagine in più, per giunta
    nere (lo sfondo scuro dell'app). Qui il resto è `display: none` e la pagina è bianca. */
+/* — accesso — */
+.login-page { display: flex; align-items: center; justify-content: center; padding: 32px; }
+.login-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+  max-width: 360px;
+  padding: 32px;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+.login-card .app-brand { margin: 0; }
+.login-errore { color: var(--color-accent); }
+.nav-utente { display: flex; align-items: center; gap: 10px; }
+
+/* — utenti — */
+.utenti {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 48px;
+  padding: 28px 32px 64px;
+  max-width: 1000px;
+  align-items: start;
+}
+.utenti-col { display: flex; flex-direction: column; gap: 16px; }
+.utenti-list { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.utenti-azioni { display: flex; gap: 8px; flex-wrap: wrap; }
+.utente-io { color: var(--color-accent); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
+
 @media print {
   @page { size: A4; margin: 0; }
 
@@ -285,7 +316,7 @@ select.input { appearance: none; }
     height: auto !important;
     display: block !important;
   }
-  .app-nav, .form-col, .preview-head, .storico, .rubrica, .avviso { display: none !important; }
+  .app-nav, .form-col, .preview-head, .storico, .rubrica, .utenti, .avviso { display: none !important; }
   .nuova, .preview-col, .anteprima-scroll, .print-scale, .print-area {
     display: block !important;
     margin: 0 !important;

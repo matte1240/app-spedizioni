@@ -1,0 +1,21 @@
+# Avvio: docker compose up -d  →  http://localhost:3000
+# Al primo avvio viene creato l'utente «admin» con password «admin»: cambiala
+# subito dalla schermata Utenti.
+services:
+  etichette:
+    image: ghcr.io/matte1240/app-spedizioni:latest
+    # Per usare il codice di questa cartella invece dell'immagine pubblicata:
+    # commenta la riga `image:` qui sopra e togli il commento a `build: .`
+    # build: .
+    container_name: etichette
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Il percorso del database dentro al container: sta nel volume qui sotto.
+      DB_PATH: /data/etichette.db
+    volumes:
+      - etichette-dati:/data
+
+volumes:
+  etichette-dati:

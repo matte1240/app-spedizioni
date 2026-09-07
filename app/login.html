@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Accedi · Etichette di spedizione</title>
+<link rel="stylesheet" href="nocturne.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="app login-page">
+  <form class="login-card" id="modulo" autocomplete="on">
+    <div class="app-brand">
+      <span class="brand-mark">ET</span>
+      <span>Etichette di spedizione</span>
+    </div>
+    <div>
+      <h2 class="page-title">Accedi</h2>
+      <p class="page-sub text-muted">Serve un utente del portale per entrare.</p>
+    </div>
+    <div class="field">
+      <label for="utente">Utente</label>
+      <input class="input" id="utente" name="username" autocomplete="username" autofocus required>
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
+    </div>
+    <p class="note login-errore" id="errore" hidden></p>
+    <button class="btn btn-primary btn-block" type="submit" id="entra">Entra</button>
+  </form>
+</div>
+<script>
+const modulo = document.getElementById("modulo");
+const errore = document.getElementById("errore");
+const entra = document.getElementById("entra");
+
+modulo.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  errore.hidden = true;
+  entra.disabled = true;
+  entra.textContent = "Attendere…";
+  try {
+    const res = await fetch("/api/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        utente: document.getElementById("utente").value,
+        password: document.getElementById("password").value,
+      }),
+    });
+    const dati = await res.json();
+    if (!res.ok) throw new Error(dati.errore || "errore di rete");
+    location.href = "/";
+    return;
+  } catch (err) {
+    errore.textContent = err.message;
+    errore.hidden = false;
+    document.getElementById("password").value = "";
+    document.getElementById("password").focus();
+  }
+  entra.disabled = false;
+  entra.textContent = "Entra";
+});
+</script>
+</body>
+</html>

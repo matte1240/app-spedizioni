@@ -1,6 +1,7 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 const { DatabaseSync } = require("node:sqlite");
 
 const PORT = Number(process.env.PORT || 3000);
@@ -63,6 +64,18 @@ db.exec(`
     chiave TEXT PRIMARY KEY,
     valore TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS utenti (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    utente TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    nome TEXT NOT NULL DEFAULT '',
+    hash TEXT NOT NULL,
+    creato_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS sessioni (
+    token TEXT PRIMARY KEY,
+    utente_id INTEGER NOT NULL,
+    creato_at TEXT NOT NULL
+  );
 `);
 
 migra();
@@ -110,6 +123,114 @@ const getImpostazione = db.prepare("SELECT valore FROM impostazioni WHERE chiave
 const setImpostazione = db.prepare(
   "INSERT INTO impostazioni (chiave, valore) VALUES (?, ?) ON CONFLICT(chiave) DO UPDATE SET valore = excluded.valore"
 );
+
+/* — utenti e sessioni — */
+
+/* Accesso unico per tutti: chi entra vede e fa tutto, non ci sono ruoli né permessi. */
+
+const COOKIE_SESSIONE = "sessione";
+const DURATA_SESSIONE = 30 * 24 * 60 * 60; // secondi
+const UTENTE_INIZIALE = { utente: "admin", nome: "Amministratore", password: "admin" };
+
+/** La password non viene mai salvata: si conserva `salt:derivata`, entrambi esadecimali. */
+function cifraPassword(password) {
+  const salt = crypto.randomBytes(16).toString("hex");
+  return salt + ":" + crypto.scryptSync(password, salt, 64).toString("hex");
+}
+
+function passwordCorretta(password, salvato) {
+  const [salt, atteso] = String(salvato || "").split(":");
+  if (!salt || !atteso) return false;
+  const attesoBuf = Buffer.from(atteso, "hex");
+  const calcolato = crypto.scryptSync(password, salt, 64);
+  return attesoBuf.length === calcolato.length && crypto.timingSafeEqual(attesoBuf, calcolato);
+}
+
+/** Al primo avvio serve un modo per entrare: admin / admin, da cambiare subito. */
+function seedUtente() {
+  if (db.prepare("SELECT COUNT(*) n FROM utenti").get().n > 0) return;
+  db.prepare("INSERT INTO utenti (utente, nome, hash, creato_at) VALUES (?, ?, ?, ?)").run(
+    UTENTE_INIZIALE.utente,
+    UTENTE_INIZIALE.nome,
+    cifraPassword(UTENTE_INIZIALE.password),
+    new Date().toISOString()
+  );
+  console.log(`Nessun utente: creato «${UTENTE_INIZIALE.utente}» con password «${UTENTE_INIZIALE.password}».`);
+}
+seedUtente();
+
+// Le sessioni scadute restano in tabella finché qualcuno non le usa: si ripuliscono all'avvio.
+db.prepare("DELETE FROM sessioni WHERE creato_at < ?").run(
+  new Date(Date.now() - DURATA_SESSIONE * 1000).toISOString()
+);
+
+const elencoUtenti = () =>
+  db.prepare("SELECT id, utente, nome, creato_at FROM utenti ORDER BY utente COLLATE NOCASE").all();
+
+const contaUtenti = () => db.prepare("SELECT COUNT(*) n FROM utenti").get().n;
+
+function creaSessione(utenteId) {
+  const token = crypto.randomBytes(32).toString("hex");
+  db.prepare("INSERT INTO sessioni (token, utente_id, creato_at) VALUES (?, ?, ?)").run(
+    token,
+    utenteId,
+    new Date().toISOString()
+  );
+  return token;
+}
+
+/** L'utente di una sessione valida, oppure null (token sconosciuto, scaduto o utente rimosso). */
+function utenteDellaSessione(token) {
+  if (!token) return null;
+  const s = db.prepare("SELECT utente_id, creato_at FROM sessioni WHERE token = ?").get(token);
+  if (!s) return null;
+  if (Date.now() - Date.parse(s.creato_at) > DURATA_SESSIONE * 1000) {
+    db.prepare("DELETE FROM sessioni WHERE token = ?").run(token);
+    return null;
+  }
+  return db.prepare("SELECT id, utente, nome FROM utenti WHERE id = ?").get(s.utente_id) || null;
+}
+
+/** Chi cambia password o sparisce non deve restare collegato altrove. */
+const chiudiSessioniDi = (utenteId) => db.prepare("DELETE FROM sessioni WHERE utente_id = ?").run(utenteId);
+
+function accedi(nomeUtente, password) {
+  const u = db.prepare("SELECT id, utente, nome, hash FROM utenti WHERE utente = ?").get(String(nomeUtente || "").trim());
+  if (!u || !passwordCorretta(String(password || ""), u.hash)) return null;
+  return { id: u.id, utente: u.utente, nome: u.nome };
+}
+
+function creaUtente({ utente, nome, password }) {
+  if (db.prepare("SELECT 1 FROM utenti WHERE utente = ?").get(utente)) {
+    throw Object.assign(new Error("Nome utente già in uso"), { stato: 409 });
+  }
+  db.prepare("INSERT INTO utenti (utente, nome, hash, creato_at) VALUES (?, ?, ?, ?)").run(
+    utente,
+    nome,
+    cifraPassword(password),
+    new Date().toISOString()
+  );
+}
+
+/** Cambia nome e, solo se ne arriva una nuova, la password. */
+function aggiornaUtente(id, { nome, password }) {
+  const u = db.prepare("SELECT id FROM utenti WHERE id = ?").get(id);
+  if (!u) throw Object.assign(new Error("Utente inesistente"), { stato: 404 });
+  db.prepare("UPDATE utenti SET nome = ? WHERE id = ?").run(nome, id);
+  if (password) {
+    db.prepare("UPDATE utenti SET hash = ? WHERE id = ?").run(cifraPassword(password), id);
+    chiudiSessioniDi(id);
+  }
+}
+
+function eliminaUtente(id) {
+  const u = db.prepare("SELECT id FROM utenti WHERE id = ?").get(id);
+  if (!u) throw Object.assign(new Error("Utente inesistente"), { stato: 404 });
+  // Senza utenti nessuno potrebbe più entrare: l'ultimo non si cancella.
+  if (contaUtenti() <= 1) throw Object.assign(new Error("Serve almeno un utente"), { stato: 400 });
+  chiudiSessioniDi(id);
+  db.prepare("DELETE FROM utenti WHERE id = ?").run(id);
+}
 
 /* — CSV — */
 
@@ -473,7 +594,7 @@ function cliente(id) {
   return db.prepare("SELECT id, codice, ragione_sociale, indirizzo, cap_citta FROM clienti WHERE id = ?").get(id) || null;
 }
 
-function stato(q) {
+function stato(q, utente) {
   const sedi = db.prepare("SELECT nome FROM sedi ORDER BY ordine, id").all().map((r) => r.nome);
   const mittente = getImpostazione.get("mittente")?.valore || sedi[0] || "";
   return {
@@ -489,6 +610,8 @@ function stato(q) {
     formato: Number(getImpostazione.get("formato")?.valore) === 4 ? 4 : 2,
     prossimoCodice: prossimoCodice(),
     oggi: giornoLocale(new Date().toISOString()),
+    utente: utente || null,
+    utenti: elencoUtenti(),
   };
 }
 
@@ -512,6 +635,15 @@ function leggiCorpo(req, limite = 20 * 1024 * 1024) {
     req.on("end", () => risolvi(dati));
     req.on("error", rifiuta);
   });
+}
+
+/** Il valore di un cookie della richiesta, o null. */
+function cookie(req, nome) {
+  for (const parte of String(req.headers.cookie || "").split(";")) {
+    const i = parte.indexOf("=");
+    if (i > 0 && parte.slice(0, i).trim() === nome) return decodeURIComponent(parte.slice(i + 1).trim());
+  }
+  return null;
 }
 
 function json(res, code, body) {
@@ -541,11 +673,94 @@ function servi(res, urlPath) {
   });
 }
 
+/* Pagina di accesso e fogli di stile che le servono: raggiungibili senza essere entrati. */
+const PUBBLICI = new Set(["/login", "/login.html", "/app.css", "/nocturne.css"]);
+
+function vaiA(res, dove) {
+  res.writeHead(302, { location: dove });
+  res.end();
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   try {
+    // Serve al HEALTHCHECK del container, che non ha una sessione: non espone dati.
+    if (url.pathname === "/api/salute" && req.method === "GET") {
+      return json(res, 200, { ok: true, utenti: contaUtenti() });
+    }
+
+    const utente = utenteDellaSessione(cookie(req, COOKIE_SESSIONE));
+
+    if (url.pathname === "/api/login" && req.method === "POST") {
+      const b = JSON.parse((await leggiCorpo(req, 4 * 1024)) || "{}");
+      const u = accedi(b.utente, b.password);
+      if (!u) return json(res, 401, { errore: "Utente o password non validi" });
+      const token = creaSessione(u.id);
+      res.setHeader(
+        "set-cookie",
+        `${COOKIE_SESSIONE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${DURATA_SESSIONE}`
+      );
+      return json(res, 200, { utente: u });
+    }
+
+    if (url.pathname === "/api/logout" && req.method === "POST") {
+      const token = cookie(req, COOKIE_SESSIONE);
+      if (token) db.prepare("DELETE FROM sessioni WHERE token = ?").run(token);
+      res.setHeader("set-cookie", `${COOKIE_SESSIONE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+      return json(res, 200, { uscito: true });
+    }
+
+    if (!utente) {
+      if (url.pathname.startsWith("/api/")) return json(res, 401, { errore: "Sessione scaduta" });
+      if (url.pathname === "/login") return servi(res, "/login.html");
+      if (PUBBLICI.has(url.pathname)) return servi(res, url.pathname);
+      return vaiA(res, "/login");
+    }
+
+    // Chi è già dentro non ha motivo di rivedere il modulo di accesso.
+    if (url.pathname === "/login" || url.pathname === "/login.html") return vaiA(res, "/");
+
+    if (url.pathname === "/api/utenti" && req.method === "GET") {
+      return json(res, 200, { utenti: elencoUtenti() });
+    }
+
+    if (url.pathname === "/api/utenti" && req.method === "POST") {
+      const b = JSON.parse((await leggiCorpo(req, 4 * 1024)) || "{}");
+      const nomeUtente = String(b.utente || "").trim();
+      const password = String(b.password || "");
+      if (!nomeUtente) return json(res, 400, { errore: "Manca il nome utente" });
+      if (password.length < 4) return json(res, 400, { errore: "La password deve avere almeno 4 caratteri" });
+      try {
+        creaUtente({ utente: nomeUtente, nome: String(b.nome || "").trim(), password });
+      } catch (e) {
+        return json(res, e.stato || 400, { errore: e.message });
+      }
+      return json(res, 200, { stato: stato("", utente) });
+    }
+
+    if (url.pathname.startsWith("/api/utenti/") && (req.method === "PUT" || req.method === "DELETE")) {
+      const id = Number(url.pathname.slice("/api/utenti/".length));
+      if (!Number.isInteger(id) || id <= 0) return json(res, 400, { errore: "utente sconosciuto" });
+      try {
+        if (req.method === "DELETE") {
+          eliminaUtente(id);
+          return json(res, 200, { stato: stato("", utente), uscito: id === utente.id });
+        }
+        const b = JSON.parse((await leggiCorpo(req, 4 * 1024)) || "{}");
+        const password = String(b.password || "");
+        if (password && password.length < 4) {
+          return json(res, 400, { errore: "La password deve avere almeno 4 caratteri" });
+        }
+        aggiornaUtente(id, { nome: String(b.nome || "").trim(), password });
+        // Cambiando la propria password si chiudono anche le sessioni: si rientra.
+        return json(res, 200, { stato: stato("", utente), uscito: Boolean(password) && id === utente.id });
+      } catch (e) {
+        return json(res, e.stato || 400, { errore: e.message });
+      }
+    }
+
     if (url.pathname === "/api/stato" && req.method === "GET") {
-      return json(res, 200, stato(url.searchParams.get("q")));
+      return json(res, 200, stato(url.searchParams.get("q"), utente));
     }
 
     if (url.pathname === "/api/clienti" && req.method === "GET") {
@@ -557,7 +772,7 @@ const server = http.createServer(async (req, res) => {
       const clienti = parseCsv(csv);
       if (!clienti.length) return json(res, 400, { errore: "Nessuna riga valida nel CSV" });
       importaClienti(clienti);
-      return json(res, 200, { importati: clienti.length, stato: stato("") });
+      return json(res, 200, { importati: clienti.length, stato: stato("", utente) });
     }
 
     if (ELENCHI[url.pathname] && req.method === "POST") {
@@ -569,7 +784,7 @@ const server = http.createServer(async (req, res) => {
         .filter((s, i, a) => a.indexOf(s) === i);
       if (!pulite.length) return json(res, 400, { errore });
       salvaElenco(tabella, pulite);
-      return json(res, 200, { stato: stato("") });
+      return json(res, 200, { stato: stato("", utente) });
     }
 
     if (url.pathname === "/api/formato" && req.method === "POST") {
@@ -605,7 +820,7 @@ const server = http.createServer(async (req, res) => {
         ddt,
         peso: pesoValido(b.peso),
       });
-      return json(res, 200, { codice, stato: stato(b.q || "") });
+      return json(res, 200, { codice, stato: stato(b.q || "", utente) });
     }
 
     if (url.pathname.startsWith("/api/spedizioni/") && (req.method === "PUT" || req.method === "DELETE")) {
@@ -613,7 +828,7 @@ const server = http.createServer(async (req, res) => {
       try {
         if (req.method === "DELETE") {
           eliminaSpedizione(codice);
-          return json(res, 200, { stato: stato(url.searchParams.get("q") || "") });
+          return json(res, 200, { stato: stato(url.searchParams.get("q") || "", utente) });
         }
         const b = JSON.parse((await leggiCorpo(req)) || "{}");
         if (!b.vettore || !b.mittente) return json(res, 400, { errore: "dati incompleti" });
@@ -634,7 +849,7 @@ const server = http.createServer(async (req, res) => {
           ddt,
           peso: pesoValido(b.peso),
         });
-        return json(res, 200, { codice, stato: stato(b.q || "") });
+        return json(res, 200, { codice, stato: stato(b.q || "", utente) });
       } catch (e) {
         return json(res, e.stato || 400, { errore: e.message });
       }
@@ -667,7 +882,7 @@ const server = http.createServer(async (req, res) => {
       } catch (e) {
         return json(res, e.stato || 400, { errore: e.message });
       }
-      return json(res, 200, { bordero: borderoDettaglio(numero), stato: stato("") });
+      return json(res, 200, { bordero: borderoDettaglio(numero), stato: stato("", utente) });
     }
 
     if (url.pathname === "/api/bordero" && req.method === "POST") {
@@ -686,7 +901,7 @@ const server = http.createServer(async (req, res) => {
       } catch (e) {
         return json(res, 400, { errore: e.message });
       }
-      return json(res, 200, { bordero: borderoDettaglio(numero), stato: stato("") });
+      return json(res, 200, { bordero: borderoDettaglio(numero), stato: stato("", utente) });
     }
 
     if (url.pathname.startsWith("/api/")) return json(res, 404, { errore: "endpoint sconosciuto" });
