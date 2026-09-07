@@ -616,6 +616,40 @@ function cliente(id) {
   return db.prepare("SELECT id, codice, ragione_sociale, indirizzo, cap_citta FROM clienti WHERE id = ?").get(id) || null;
 }
 
+/** In anagrafica ogni riga è un indirizzo di consegna, non un cliente: lo stesso
+    cliente può avere più sedi, e quella che si scrive qui non ne sostituisce un'altra.
+    Se l'indirizzo c'è già lo si riusa, altrimenti si aggiunge. Restituisce la riga da
+    mettere in etichetta. */
+function salvaDestinatario(b) {
+  const dati = {
+    ragione_sociale: String(b.destinatario || "").trim(),
+    indirizzo: String(b.indirizzo || "").trim(),
+    cap_citta: String(b.capCitta || "").trim(),
+  };
+  if (!dati.ragione_sociale) throw Object.assign(new Error("Manca il destinatario"), { stato: 400 });
+
+  // La destinazione è la terna nome + indirizzo + località: se coincide, è la stessa sede.
+  const esistente = db
+    .prepare(
+      `SELECT id, codice FROM clienti
+        WHERE ragione_sociale = ? COLLATE NOCASE
+          AND indirizzo = ? COLLATE NOCASE
+          AND cap_citta = ? COLLATE NOCASE`
+    )
+    .get(dati.ragione_sociale, dati.indirizzo, dati.cap_citta);
+  if (esistente) return { id: esistente.id, codice: esistente.codice, ...dati };
+
+  // Sede nuova di un cliente già noto: si porta dietro il suo codice.
+  const codice =
+    db
+      .prepare("SELECT codice FROM clienti WHERE ragione_sociale = ? COLLATE NOCASE AND codice <> '' LIMIT 1")
+      .get(dati.ragione_sociale)?.codice || "";
+  const ins = db
+    .prepare("INSERT INTO clienti (codice, ragione_sociale, indirizzo, cap_citta, piva) VALUES (?, ?, ?, ?, '')")
+    .run(codice, dati.ragione_sociale, dati.indirizzo, dati.cap_citta);
+  return { id: Number(ins.lastInsertRowid), codice, ...dati };
+}
+
 function stato(q, utente) {
   const sedi = db.prepare("SELECT nome FROM sedi ORDER BY ordine, id").all().map((r) => r.nome);
   const mittente = getImpostazione.get("mittente")?.valore || sedi[0] || "";
@@ -833,11 +867,15 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/spedizioni" && req.method === "POST") {
       const b = JSON.parse((await leggiCorpo(req)) || "{}");
-      const c = cliente(Number(b.clienteId));
-      if (!c) return json(res, 400, { errore: "cliente sconosciuto" });
       if (!b.vettore || !b.mittente) return json(res, 400, { errore: "dati incompleti" });
       const ddt = ddtValido(b.ddt);
       if (!ddt) return json(res, 400, { errore: "Manca il numero DDT" });
+      let c;
+      try {
+        c = salvaDestinatario(b);
+      } catch (e) {
+        return json(res, e.stato || 400, { errore: e.message });
+      }
       const codice = creaSpedizione({
         vettore: String(b.vettore),
         mittente: String(b.mittente),
@@ -861,19 +899,17 @@ const server = http.createServer(async (req, res) => {
         }
         const b = JSON.parse((await leggiCorpo(req)) || "{}");
         if (!b.vettore || !b.mittente) return json(res, 400, { errore: "dati incompleti" });
-        // Il destinatario arriva dall'anagrafica; se il cliente non c'è più valgono i dati inviati.
-        const c = cliente(Number(b.clienteId));
-        const destinatario = c ? c.ragione_sociale : String(b.destinatario || "").trim();
-        if (!destinatario) return json(res, 400, { errore: "destinatario mancante" });
         const ddt = ddtValido(b.ddt);
         if (!ddt) return json(res, 400, { errore: "Manca il numero DDT" });
+        // Anche le correzioni fatte qui aggiornano l'anagrafica.
+        const c = salvaDestinatario(b);
         aggiornaSpedizione(codice, {
           vettore: String(b.vettore),
           mittente: String(b.mittente),
-          cliente_codice: c ? c.codice : String(b.clienteCodice || ""),
-          destinatario,
-          indirizzo: c ? c.indirizzo : String(b.indirizzo || ""),
-          cap_citta: c ? c.cap_citta : String(b.capCitta || ""),
+          cliente_codice: c.codice,
+          destinatario: c.ragione_sociale,
+          indirizzo: c.indirizzo,
+          cap_citta: c.cap_citta,
           colli: Math.max(1, Math.min(99, Number(b.colli) || 1)),
           ddt,
           peso: pesoValido(b.peso),

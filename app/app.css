@@ -86,16 +86,6 @@ select.input { appearance: none; }
 .contact-mark { font-size: 11px; color: var(--color-accent); letter-spacing: 0.08em; }
 .list-empty { padding: 14px 12px; font-size: 13px; }
 
-.scelto {
-  display: flex; flex-direction: column; gap: 2px;
-  padding: 9px 12px;
-  border-radius: var(--radius-md);
-  background: var(--color-accent-900);
-  box-shadow: inset 2px 0 0 var(--color-accent);
-  font-size: 12px;
-}
-.scelto-nome { font-size: 14px; font-weight: 500; }
-
 .colli {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 8px 12px;
