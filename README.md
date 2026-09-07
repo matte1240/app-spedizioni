@@ -14,7 +14,8 @@ Nessuna dipendenza da installare: il server usa `node:http` e il modulo SQLite i
 (`node:sqlite`), quindi serve **Node 22.5 o superiore**.
 
 Il database viene creato al primo avvio in `data/etichette.db` (percorso modificabile con
-`DB_PATH`, porta con `PORT`).
+`DB_PATH`, porta con `PORT`). `ADMIN_UTENTE` e `ADMIN_PASSWORD` decidono il primo utente, vedi
+[Accesso](#accesso).
 
 ### Con Docker
 
@@ -46,8 +47,21 @@ commenta `image:` e togli il commento a `build: .`.
 ## Accesso
 
 Il portale è protetto da una login: senza sessione ogni pagina rimanda a `/login` e le API
-rispondono `401`. **Al primo avvio viene creato l'utente `admin` con password `admin`**: entra e
-cambiala subito dalla schermata Utenti.
+rispondono `401`.
+
+Al primo avvio (database vuoto) viene creato un solo utente, `admin`, e **la sua password non è
+fissa**: la scegli tu con `ADMIN_PASSWORD`, altrimenti il server ne genera una a caso. In quel caso
+non finisce nei log — che girano fra `docker logs` e i raccoglitori esterni — ma in un file accanto
+al database, leggibile solo dal proprietario:
+
+```bash
+docker compose exec etichette cat /data/password-iniziale.txt   # con Docker
+cat data/password-iniziale.txt                                  # in locale
+```
+
+Entra, cambia la password dalla schermata Utenti e cancella il file. Con `ADMIN_UTENTE` cambi anche
+il nome del primo utente. Le due variabili contano solo alla creazione del database: dopo, le
+password si gestiscono dalla schermata Utenti.
 
 Non ci sono ruoli né permessi: chi entra vede e fa tutto. La schermata **Utenti** serve solo a dire
 chi può entrare — si aggiungono utenti, si cambia nome e password, si eliminano (l'ultimo rimasto
@@ -59,7 +73,8 @@ sessioni aperte a suo nome. Le sessioni stanno in SQLite, quindi un riavvio del 
 uscire nessuno.
 
 Il cookie non ha il flag `Secure`, così funziona anche sulla rete interna in HTTP semplice: se il
-portale viene esposto fuori dall'azienda, mettilo dietro HTTPS.
+portale viene esposto fuori dall'azienda, mettilo dietro HTTPS. Un cookie illeggibile vale come
+«nessuna sessione» e riporta alla login, invece di far fallire la richiesta.
 
 L'ambiente di prova (`demo/`) non ha un server: lì accesso e utenti non compaiono.
 

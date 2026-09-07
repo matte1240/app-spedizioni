@@ -977,6 +977,8 @@ function render() {
   const pagine = { storico: htmlStorico, rubrica: htmlRubrica, bordero: htmlBordero, utenti: htmlUtenti, nuova: htmlNuova };
   view.innerHTML = (pagine[stato.tab] || htmlNuova)();
 
+  mostraUtente();
+
   document.querySelectorAll(".app-nav a").forEach((a) => {
     if (a.dataset.tab === stato.tab) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
@@ -1572,7 +1574,8 @@ async function esci() {
   tornaAlLogin();
 }
 
-/** Mostra chi è collegato accanto al pulsante di uscita. */
+/** Chi è collegato, accanto al pulsante di uscita. La chiama render(): il nome cambia
+    quando l'utente modifica sé stesso dalla schermata Utenti. */
 function mostraUtente() {
   const el = document.getElementById("nav-utente");
   if (el && stato.utente) el.textContent = stato.utente.nome || stato.utente.utente;
@@ -1592,7 +1595,6 @@ async function avvia() {
     )}</p></div>`;
     return;
   }
-  mostraUtente();
   const tab = ["nuova", "storico", "rubrica", "bordero", "utenti"];
   const hash = location.hash.replace("#", "");
   vaiA(tab.includes(hash) && !(hash === "utenti" && window.apiLocale) ? hash : "nuova");

@@ -130,7 +130,9 @@ const setImpostazione = db.prepare(
 
 const COOKIE_SESSIONE = "sessione";
 const DURATA_SESSIONE = 30 * 24 * 60 * 60; // secondi
-const UTENTE_INIZIALE = { utente: "admin", nome: "Amministratore", password: "admin" };
+const UTENTE_INIZIALE = process.env.ADMIN_UTENTE || "admin";
+// Il file con la password generata sta accanto al database, non nei log.
+const FILE_PASSWORD = path.join(path.dirname(DB_PATH), "password-iniziale.txt");
 
 /** La password non viene mai salvata: si conserva `salt:derivata`, entrambi esadecimali. */
 function cifraPassword(password) {
@@ -146,16 +148,34 @@ function passwordCorretta(password, salvato) {
   return attesoBuf.length === calcolato.length && crypto.timingSafeEqual(attesoBuf, calcolato);
 }
 
-/** Al primo avvio serve un modo per entrare: admin / admin, da cambiare subito. */
+/** Al primo avvio serve un modo per entrare, ma non una password uguale per tutti:
+    la si prende da ADMIN_PASSWORD, altrimenti se ne genera una a caso. */
 function seedUtente() {
   if (db.prepare("SELECT COUNT(*) n FROM utenti").get().n > 0) return;
+  const scelta = process.env.ADMIN_PASSWORD || "";
+  const password = scelta || crypto.randomBytes(12).toString("base64url");
   db.prepare("INSERT INTO utenti (utente, nome, hash, creato_at) VALUES (?, ?, ?, ?)").run(
-    UTENTE_INIZIALE.utente,
-    UTENTE_INIZIALE.nome,
-    cifraPassword(UTENTE_INIZIALE.password),
+    UTENTE_INIZIALE,
+    "Amministratore",
+    cifraPassword(password),
     new Date().toISOString()
   );
-  console.log(`Nessun utente: creato «${UTENTE_INIZIALE.utente}» con password «${UTENTE_INIZIALE.password}».`);
+  if (scelta) return console.log(`Nessun utente: creato «${UTENTE_INIZIALE}» con la password di ADMIN_PASSWORD.`);
+
+  // I log finiscono in giro (docker logs, raccoglitori esterni): la password no.
+  try {
+    fs.writeFileSync(FILE_PASSWORD, password + "\n", { mode: 0o600 });
+    console.log(
+      `Nessun utente: creato «${UTENTE_INIZIALE}». La password è in ${FILE_PASSWORD}: ` +
+        "entra, cambiala dalla schermata Utenti, poi cancella il file."
+    );
+  } catch (e) {
+    // Senza il file non si entrerebbe più: come ultima spiaggia si scrive a schermo.
+    console.log(
+      `Nessun utente: creato «${UTENTE_INIZIALE}» con password «${password}» ` +
+        `(non ho potuto scrivere ${FILE_PASSWORD}: ${e.message}). Cambiala subito.`
+    );
+  }
 }
 seedUtente();
 
@@ -168,6 +188,8 @@ const elencoUtenti = () =>
   db.prepare("SELECT id, utente, nome, creato_at FROM utenti ORDER BY utente COLLATE NOCASE").all();
 
 const contaUtenti = () => db.prepare("SELECT COUNT(*) n FROM utenti").get().n;
+
+const utentePerId = (id) => db.prepare("SELECT id, utente, nome FROM utenti WHERE id = ?").get(id) || null;
 
 function creaSessione(utenteId) {
   const token = crypto.randomBytes(32).toString("hex");
@@ -188,7 +210,7 @@ function utenteDellaSessione(token) {
     db.prepare("DELETE FROM sessioni WHERE token = ?").run(token);
     return null;
   }
-  return db.prepare("SELECT id, utente, nome FROM utenti WHERE id = ?").get(s.utente_id) || null;
+  return utentePerId(s.utente_id);
 }
 
 /** Chi cambia password o sparisce non deve restare collegato altrove. */
@@ -610,7 +632,7 @@ function stato(q, utente) {
     formato: Number(getImpostazione.get("formato")?.valore) === 4 ? 4 : 2,
     prossimoCodice: prossimoCodice(),
     oggi: giornoLocale(new Date().toISOString()),
-    utente: utente || null,
+    utente: utente ? utentePerId(utente.id) : null,
     utenti: elencoUtenti(),
   };
 }
@@ -641,7 +663,14 @@ function leggiCorpo(req, limite = 20 * 1024 * 1024) {
 function cookie(req, nome) {
   for (const parte of String(req.headers.cookie || "").split(";")) {
     const i = parte.indexOf("=");
-    if (i > 0 && parte.slice(0, i).trim() === nome) return decodeURIComponent(parte.slice(i + 1).trim());
+    if (i <= 0 || parte.slice(0, i).trim() !== nome) continue;
+    try {
+      return decodeURIComponent(parte.slice(i + 1).trim());
+    } catch {
+      // Valore non decodificabile (cookie manomesso o troncato): vale come «nessuna sessione».
+      // Senza questa rete perfino /login risponderebbe 500 e il browser resterebbe chiuso fuori.
+      return null;
+    }
   }
   return null;
 }

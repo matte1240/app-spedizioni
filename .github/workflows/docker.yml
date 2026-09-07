@@ -48,7 +48,7 @@ jobs:
 
       - name: Prova che il container risponda
         run: |
-          docker run -d --name prova -p 3000:3000 prova:${{ github.sha }}
+          docker run -d --name prova -p 3000:3000 -e ADMIN_PASSWORD=provaprova prova:${{ github.sha }}
           for i in $(seq 1 20); do
             if curl -sf http://localhost:3000/api/salute > /dev/null; then pronto=1; break; fi
             sleep 1
@@ -57,9 +57,9 @@ jobs:
           # Senza sessione il portale porta al modulo di accesso.
           curl -sf http://localhost:3000/login | grep -q "Accedi"
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/api/stato)" = 401
-          # Con l'utente creato al primo avvio si entra e si vede l'applicazione.
+          # Con l'utente creato al primo avvio (password da ADMIN_PASSWORD) si entra.
           curl -sf -c biscotti.txt -X POST http://localhost:3000/api/login \
-            -H 'content-type: application/json' -d '{"utente":"admin","password":"admin"}' | grep -q '"admin"'
+            -H 'content-type: application/json' -d '{"utente":"admin","password":"provaprova"}' | grep -q '"admin"'
           curl -sf -b biscotti.txt http://localhost:3000/ | grep -q "Etichette di spedizione"
           curl -sf -b biscotti.txt http://localhost:3000/api/stato | grep -q '"prossimoCodice"'
           docker rm -f prova
