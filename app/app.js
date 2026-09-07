@@ -11,7 +11,8 @@ const stato = {
   storico: [],
   mittente: "",
   vettore: "",
-  sel: null, // cliente selezionato (oggetto completo)
+  sel: null, // destinatario in etichetta: cliente scelto dalla rubrica oppure scritto a mano
+  listaRicerca: false, // l'elenco compare solo mentre si cerca, e si richiude alla scelta
   colli: 1,
   ddt: "",
   peso: "", // in kg, facoltativo: vuoto vuol dire «non indicato»
@@ -50,6 +51,12 @@ const RIGHE_ULTIMA = 10;
 
 /* Un millimetro in pixel CSS: il foglio è disegnato in millimetri, il layout misura in pixel. */
 const MM = 96 / 25.4;
+
+/** Confronto fra testi dell'anagrafica: spazi ai bordi e maiuscole non contano. */
+const ugualeTesto = (a, b) => String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+
+/** Un destinatario ancora da compilare: il modulo parte vuoto, non sul primo cliente. */
+const destinatarioVuoto = () => ({ id: null, codice: "", ragione_sociale: "", indirizzo: "", cap_citta: "" });
 
 const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -100,7 +107,7 @@ function applicaStato(s) {
   if (!stato.bGiorno) stato.bGiorno = stato.oggi;
   if (!stato.vettore || !s.vettori.includes(stato.vettore)) stato.vettore = s.vettori[0] || "";
   if (!stato.bVettore || !s.vettori.includes(stato.bVettore)) stato.bVettore = s.vettori[0] || "";
-  if (!stato.sel) stato.sel = s.clienti[0] || null;
+  if (!stato.sel) stato.sel = destinatarioVuoto();
   if (s.utente) stato.utente = s.utente;
   if (s.utenti) stato.utenti = s.utenti;
 }
@@ -273,8 +280,10 @@ function htmlContatto(c) {
 function htmlNuova() {
   const sheets = Math.ceil(stato.colli / stato.formato);
   const parziale = stato.risultati.length >= stato.limiteRicerca;
-  // Senza destinatario o senza DDT non si stampa e non si salva.
-  const completo = !!stato.sel && !!stato.ddt.trim();
+  const d = stato.sel || destinatarioVuoto();
+  const aperta = stato.listaRicerca && !!stato.cerca.trim();
+  // Senza ragione sociale o senza DDT non si stampa e non si salva.
+  const completo = !!d.ragione_sociale.trim() && !!stato.ddt.trim();
   return `
   <div class="nuova">
     <div class="form-col">
@@ -322,27 +331,42 @@ function htmlNuova() {
       <div class="stack-10">
         <div class="row-between">
           <h6 class="section-label">Destinatario</h6>
-          <span class="text-muted" style="font-size:12px">${stato.totaleClienti} clienti in anagrafica</span>
+          <span class="text-muted" style="font-size:12px">${stato.totaleClienti} indirizzi in anagrafica</span>
         </div>
-        <input class="input" id="cerca" placeholder="Cerca per nome, città o codice…" value="${esc(stato.cerca)}">
-        <div class="contact-list">
+        <input class="input" id="cerca" placeholder="Cerca in anagrafica per nome, città o codice…" value="${esc(
+          stato.cerca
+        )}" autocomplete="off">
+        ${
+          // L'elenco esce solo mentre si cerca: scelto il cliente si richiude.
+          aperta
+            ? `<div class="contact-list">
           ${
             stato.risultati.length
               ? stato.risultati.map(htmlContatto).join("")
-              : `<div class="list-empty text-muted">Nessun risultato. ${
-                  stato.totaleClienti ? "Prova con un altro termine." : "Importa l'anagrafica dalla Rubrica."
-                }</div>`
+              : `<div class="list-empty text-muted">Nessun cliente con questo nome: compila i campi qui sotto e
+                 finirà in anagrafica.</div>`
           }
         </div>
-        ${parziale ? `<p class="note text-muted">Primi ${stato.limiteRicerca} risultati — affina la ricerca.</p>` : ""}
-        ${
-          stato.sel && !stato.risultati.some((c) => c.id === stato.sel.id)
-            ? `<div class="scelto">
-                 <span class="scelto-nome">${esc(stato.sel.ragione_sociale)}</span>
-                 <span class="text-muted">${esc([stato.sel.indirizzo, stato.sel.cap_citta].filter(Boolean).join(" · "))}</span>
-               </div>`
+        ${parziale ? `<p class="note text-muted">Primi ${stato.limiteRicerca} risultati — affina la ricerca.</p>` : ""}`
             : ""
         }
+        <div class="field">
+          <label for="dest-nome">Ragione sociale</label>
+          <input class="input" id="dest-nome" value="${esc(d.ragione_sociale)}" placeholder="es. Rossi Srl">
+        </div>
+        <div class="field">
+          <label for="dest-indirizzo">Indirizzo di consegna</label>
+          <input class="input" id="dest-indirizzo" value="${esc(d.indirizzo)}" placeholder="es. Via Roma 1">
+        </div>
+        <div class="field">
+          <label for="dest-citta">CAP / Città</label>
+          <input class="input" id="dest-citta" value="${esc(d.cap_citta)}" placeholder="es. 33100 Udine">
+        </div>
+        <div class="rubrica-actions">
+          <button class="btn btn-ghost" type="button" id="svuota-dest">Svuota destinatario</button>
+        </div>
+        <p class="note text-muted">Conta l'indirizzo dove va la merce, non quello della sede legale. Un indirizzo
+        nuovo viene aggiunto in anagrafica come sede a sé: le altre sedi dello stesso cliente restano dove sono.</p>
       </div>
 
       <div class="colli">
@@ -358,7 +382,7 @@ function htmlNuova() {
         <p class="note text-muted">${stato.colli} ${stato.colli === 1 ? "etichetta" : "etichette"} · ${sheets} ${
     sheets === 1 ? "foglio A4" : "fogli A4"
   }${stato.ristampa ? " · ristampa di " + esc(stato.ristampa.codice) : ""}${
-    stato.sel && !stato.ddt.trim() ? " · manca il numero DDT" : ""
+    d.ragione_sociale.trim() && !stato.ddt.trim() ? " · manca il numero DDT" : ""
   }</p>
         ${
           stato.modifica
@@ -373,7 +397,7 @@ function htmlNuova() {
                 completo ? "" : " disabled"
               }>${stato.ristampa ? "Ristampa" : "Stampa"}</button>
                <button class="btn btn-secondary btn-block" type="button" id="salva"${
-                 completo && stato.sel.id && !stato.ristampa ? "" : " disabled"
+                 completo && !stato.ristampa ? "" : " disabled"
                }>Salva senza stampare</button>`
         }
         <p class="note text-muted">Nella finestra di stampa: scala 100% e margini «Nessuno», altrimenti le etichette non
@@ -820,7 +844,8 @@ function htmlRubrica() {
     <div class="rubrica-col">
       <div>
         <h2 class="page-title">Anagrafica</h2>
-        <p class="page-sub text-muted">Importa i clienti da CSV: codice, ragione sociale, indirizzo, CAP / città, P.IVA.</p>
+        <p class="page-sub text-muted">Importa i clienti da CSV: codice, ragione sociale, indirizzo, CAP / città, P.IVA.
+        Ogni riga è un indirizzo di consegna: un cliente con più sedi ne occupa una per sede.</p>
       </div>
       <div class="field">
         <label for="csv">CSV</label>
@@ -858,7 +883,7 @@ function htmlRubrica() {
       già registrate tengono il vettore con cui sono nate, anche se qui lo togli.</p>
     </div>
     <div class="rubrica-list">
-      <h6 class="text-muted" style="margin:0">${stato.totaleClienti} clienti in anagrafica</h6>
+      <h6 class="text-muted" style="margin:0">${stato.totaleClienti} indirizzi di consegna in anagrafica</h6>
       <input class="input" id="cerca-rubrica" placeholder="Cerca…" value="${esc(stato.cerca)}">
       ${
         stato.risultati.length
@@ -879,7 +904,7 @@ function htmlRubrica() {
             .join("")}
         </tbody>
       </table>`
-          : `<p class="empty-state text-muted">Nessun cliente.</p>`
+          : `<p class="empty-state text-muted">Nessun indirizzo.</p>`
       }
     </div>
   </div>`;
@@ -1059,8 +1084,20 @@ view.addEventListener("click", async (e) => {
 
   const contatto = t.closest("[data-cliente]");
   if (contatto) {
-    stato.sel = stato.risultati.find((c) => c.id === Number(contatto.dataset.cliente)) || stato.sel;
+    const scelto = stato.risultati.find((c) => c.id === Number(contatto.dataset.cliente));
+    if (scelto) stato.sel = { ...scelto };
     stato.ristampa = null;
+    // Scelto il destinatario la ricerca ha finito il suo lavoro: si chiude.
+    stato.listaRicerca = false;
+    stato.cerca = "";
+    ricercaDifferita();
+    return render();
+  }
+
+  if (t.closest("#svuota-dest")) {
+    stato.sel = destinatarioVuoto();
+    stato.ristampa = null;
+    stato.listaRicerca = false;
     return render();
   }
 
@@ -1164,15 +1201,17 @@ view.addEventListener("click", async (e) => {
   if (t.closest("#aggiorna-stampa")) return salvaModifica(true);
   if (t.closest("#annulla-modifica")) {
     stato.modifica = null;
-    stato.sel = stato.risultati[0] || null;
+    stato.sel = destinatarioVuoto();
     stato.colli = 1;
     return vaiA("storico");
   }
 
   const usa = t.closest("[data-usa]");
   if (usa) {
-    stato.sel = stato.risultati.find((c) => c.id === Number(usa.dataset.usa)) || stato.sel;
+    const scelto = stato.risultati.find((c) => c.id === Number(usa.dataset.usa));
+    if (scelto) stato.sel = { ...scelto };
     stato.ristampa = null;
+    stato.listaRicerca = false;
     return vaiA("nuova");
   }
 
@@ -1185,7 +1224,7 @@ view.addEventListener("click", async (e) => {
     try {
       const r = await api("/api/clienti", { method: "POST", body: JSON.stringify({ csv: stato.csv }) });
       stato.cerca = "";
-      stato.sel = null;
+      stato.sel = destinatarioVuoto();
       applicaStato(r.stato);
       stato.csv = "";
       segnala("csv", `Importati ${r.importati} clienti.`);
@@ -1222,7 +1261,18 @@ view.addEventListener("click", async (e) => {
 view.addEventListener("input", (e) => {
   if (e.target.id === "cerca" || e.target.id === "cerca-rubrica") {
     stato.cerca = e.target.value;
+    if (e.target.id === "cerca") stato.listaRicerca = !!stato.cerca.trim();
     return ricercaDifferita();
+  }
+
+  const campiDest = { "dest-nome": "ragione_sociale", "dest-indirizzo": "indirizzo", "dest-citta": "cap_citta" };
+  if (campiDest[e.target.id]) {
+    if (!stato.sel) stato.sel = destinatarioVuoto();
+    stato.sel[campiDest[e.target.id]] = e.target.value;
+    // Modificando i campi non si sta più puntando alla riga da cui erano stati riempiti.
+    stato.sel.id = null;
+    // Come per DDT e peso: l'anteprima segue quello che si scrive.
+    return render();
   }
   if (e.target.id === "csv") {
     stato.csv = e.target.value;
@@ -1326,7 +1376,8 @@ async function apriNelModulo(codiceSpedizione, modo) {
   stato.ristampa = modo === "ristampa" ? { codice: r.codice } : null;
   stato.modifica = modo === "modifica" ? { codice: r.codice } : null;
   stato.messaggio = null;
-  stato.cerca = r.clienteCodice || r.nome;
+  // I campi si riempiono con quello che c'è già in etichetta; la ricerca resta chiusa.
+  stato.listaRicerca = false;
   stato.sel = {
     id: null,
     codice: r.clienteCodice,
@@ -1335,11 +1386,18 @@ async function apriNelModulo(codiceSpedizione, modo) {
     cap_citta: r.capCitta,
   };
   vaiA("nuova");
+  // Si riaggancia la riga d'anagrafica per evidenziarla nella ricerca. Il nome non basta:
+  // lo stesso cliente può avere più sedi, quindi devono coincidere anche indirizzo e località.
+  const chiave = r.clienteCodice || r.nome;
   try {
-    const ric = await api("/api/clienti?q=" + encodeURIComponent(stato.cerca));
-    stato.risultati = ric.clienti;
-    const trovato = ric.clienti.find((c) => (r.clienteCodice ? c.codice === r.clienteCodice : c.ragione_sociale === r.nome));
-    if (trovato) stato.sel = trovato;
+    const ric = await api("/api/clienti?q=" + encodeURIComponent(chiave));
+    const trovato = ric.clienti.find(
+      (c) =>
+        ugualeTesto(c.ragione_sociale, r.nome) &&
+        ugualeTesto(c.indirizzo, r.indirizzo) &&
+        ugualeTesto(c.cap_citta, r.capCitta)
+    );
+    if (trovato) stato.sel = { ...trovato };
     render();
   } catch (err) {
     console.error(err);
@@ -1359,9 +1417,7 @@ async function salvaModifica(poiStampa) {
       body: JSON.stringify({
         vettore: stato.vettore,
         mittente: stato.mittente,
-        // Senza cliente in anagrafica valgono i dati già in etichetta.
-        clienteId: stato.sel && stato.sel.id,
-        clienteCodice: stato.sel ? stato.sel.codice : "",
+        // Anche qui un indirizzo nuovo diventa una sede in più, non una correzione.
         destinatario: stato.sel ? stato.sel.ragione_sociale : "",
         indirizzo: stato.sel ? stato.sel.indirizzo : "",
         capCitta: stato.sel ? stato.sel.cap_citta : "",
@@ -1459,13 +1515,17 @@ async function aggiungiAlBordero() {
 }
 
 async function registra() {
-  if (!stato.sel || !stato.sel.id) return null;
+  const d = stato.sel;
+  if (!d || !d.ragione_sociale.trim()) return null;
   const { codice, stato: s } = await api("/api/spedizioni", {
     method: "POST",
     body: JSON.stringify({
       vettore: stato.vettore,
       mittente: stato.mittente,
-      clienteId: stato.sel.id,
+      // Il server ritrova la sede o la aggiunge, e rimanda la riga da stampare.
+      destinatario: d.ragione_sociale,
+      indirizzo: d.indirizzo,
+      capCitta: d.cap_citta,
       colli: stato.colli,
       ddt: stato.ddt,
       peso: stato.peso,

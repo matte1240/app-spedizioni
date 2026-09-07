@@ -43,6 +43,32 @@
     }
   }
 
+  /** Come sul server: ogni riga dell'anagrafica è un indirizzo di consegna.
+      Una sede nuova si aggiunge, non sostituisce quelle che il cliente ha già. */
+  function salvaDestinatario(corpo) {
+    const dati = {
+      ragione_sociale: String(corpo.destinatario || "").trim(),
+      indirizzo: String(corpo.indirizzo || "").trim(),
+      cap_citta: String(corpo.capCitta || "").trim(),
+    };
+    if (!dati.ragione_sociale) throw new Error("Manca il destinatario");
+
+    const uguale = (a, b) => String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+    const esistente = db.clienti.find(
+      (c) =>
+        uguale(c.ragione_sociale, dati.ragione_sociale) &&
+        uguale(c.indirizzo, dati.indirizzo) &&
+        uguale(c.cap_citta, dati.cap_citta)
+    );
+    if (esistente) return esistente;
+
+    const codice = db.clienti.find((c) => uguale(c.ragione_sociale, dati.ragione_sociale) && c.codice)?.codice || "";
+    const nuovo = { id: Math.max(0, ...db.clienti.map((c) => c.id)) + 1, codice, ...dati };
+    db.clienti.push(nuovo);
+    db.clienti.sort((a, b) => a.ragione_sociale.localeCompare(b.ragione_sociale, "it"));
+    return nuovo;
+  }
+
   function cerca(q) {
     const query = String(q || "").trim().toLowerCase();
     const ordinati = db.clienti;
@@ -322,18 +348,16 @@
         salva();
         return { stato: stato(q) };
       }
-      const c = db.clienti.find((x) => x.id === Number(corpo.clienteId));
-      const destinatario = c ? c.ragione_sociale : String(corpo.destinatario || "").trim();
-      if (!destinatario) throw new Error("destinatario mancante");
       const ddt = ddtValido(corpo.ddt);
       if (!ddt) throw new Error("Manca il numero DDT");
+      const c = salvaDestinatario(corpo);
       Object.assign(sp, {
         vettore: String(corpo.vettore),
         mittente: String(corpo.mittente),
-        clienteCodice: c ? c.codice : String(corpo.clienteCodice || ""),
-        nome: destinatario,
-        indirizzo: c ? c.indirizzo : String(corpo.indirizzo || ""),
-        capCitta: c ? c.cap_citta : String(corpo.capCitta || ""),
+        clienteCodice: c.codice,
+        nome: c.ragione_sociale,
+        indirizzo: c.indirizzo,
+        capCitta: c.cap_citta,
         colli: Math.max(1, Math.min(99, Number(corpo.colli) || 1)),
         ddt,
         peso: pesoValido(corpo.peso),
@@ -343,13 +367,12 @@
     }
 
     if (rotta === "/api/spedizioni") {
-      const c = db.clienti.find((x) => x.id === Number(corpo.clienteId));
-      if (!c) throw new Error("cliente sconosciuto");
+      const ddt = ddtValido(corpo.ddt);
+      if (!ddt) throw new Error("Manca il numero DDT");
+      const c = salvaDestinatario(corpo);
       const anno = new Date().getFullYear();
       const seq = (db.contatore[anno] || 0) + 1;
       db.contatore[anno] = seq;
-      const ddt = ddtValido(corpo.ddt);
-      if (!ddt) throw new Error("Manca il numero DDT");
       const codice = codiceDa(anno, seq);
       db.spedizioni.unshift({
         codice,

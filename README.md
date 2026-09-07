@@ -90,8 +90,12 @@ node demo/build.mjs [percorso/anagrafica.csv]
 
 ## Schermate
 
-- **Nuova etichetta** — vettore, sede di partenza, numero DDT, peso, destinatario dalla rubrica (con
-  ricerca), numero colli, anteprima del foglio A4 e stampa. `Salva senza stampare` registra la
+- **Nuova etichetta** — vettore, sede di partenza, numero DDT, peso, destinatario, numero colli,
+  anteprima del foglio A4 e stampa. Il destinatario si cerca in anagrafica — il campo di ricerca
+  mostra l'elenco solo mentre si scrive e lo richiude appena si sceglie una riga, riempiendo
+  **ragione sociale, indirizzo di consegna e CAP / città**. I tre campi restano modificabili: quello
+  che conta è dove va la merce, non la sede legale. Vedi
+  [Anagrafica che si scrive da sola](#anagrafica-che-si-scrive-da-sola). `Salva senza stampare` registra la
   spedizione e basta: le etichette si stampano poi tutte insieme dal Borderò, senza sprecare mezzi
   fogli. Il **numero DDT è obbligatorio** (senza,
   i pulsanti restano spenti) e finisce in etichetta sotto il codice; il **peso in kg è facoltativo**
@@ -122,6 +126,28 @@ node demo/build.mjs [percorso/anagrafica.csv]
 - **Utenti** — chi può entrare nel portale: si aggiunge un utente (nome utente, nome e cognome,
   password), se ne cambia il nome o la password, lo si elimina. Tutti hanno gli stessi permessi;
   vedi [Accesso](#accesso).
+
+## Anagrafica che si scrive da sola
+
+In anagrafica **ogni riga è un indirizzo di consegna, non un cliente**: lo stesso cliente con tre
+sedi occupa tre righe, con la stessa ragione sociale e lo stesso codice, e indirizzi diversi.
+
+Quando si registra una spedizione il destinatario del modulo finisce in anagrafica da solo:
+
+- se la terna ragione sociale + indirizzo + CAP / città esiste già, si riusa quella riga — spedire
+  dieci volte alla stessa sede non crea dieci doppioni;
+- altrimenti si aggiunge una riga nuova. **Non si sovrascrive mai una riga esistente**: cambiare
+  l'indirizzo di un cliente scelto dalla rubrica registra una sua sede in più, e le altre restano
+  dove sono;
+- una sede nuova di un cliente già in anagrafica eredita il suo codice, così le sedi restano
+  raggruppate cercando per codice.
+
+Vale sia registrando una spedizione sia correggendone una dallo Storico.
+
+Due conseguenze da tenere presenti: correggere un refuso in un indirizzo dal modulo non corregge la
+riga sbagliata, ne aggiunge una giusta accanto (la vecchia si toglie reimportando il CSV); e
+**l'importazione CSV sostituisce l'intera anagrafica**, quindi cancella anche gli indirizzi nati
+così — conviene esportare dal gestionale prima di reimportare.
 
 ## Stampa
 
@@ -216,7 +242,7 @@ altrimenti il server.
 | POST   | `/api/vettori`    | `{ vettori }` — elenco dei vettori                             |
 | POST   | `/api/mittente`   | `{ mittente }` — memorizza la sede di partenza predefinita     |
 | POST   | `/api/formato`    | `{ formato }` — etichette per foglio A4: 2 o 4                 |
-| POST   | `/api/spedizioni` | registra la spedizione e assegna il codice progressivo        |
+| POST   | `/api/spedizioni` | registra la spedizione, salva il destinatario in anagrafica e assegna il codice |
 | PUT    | `/api/spedizioni/<codice>` | corregge una spedizione (409 se è già in un borderò) |
 | DELETE | `/api/spedizioni/<codice>` | elimina una spedizione (409 se è già in un borderò)  |
 
